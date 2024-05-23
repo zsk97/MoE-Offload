@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import concurrent.futures
 from accessory.util import misc
 import fairscale.nn.model_parallel.initialize as fs_init
 
@@ -15,7 +16,8 @@ def benchmark_offload(state_path,
                       offload_size,
                       batch_size,
                       max_new_tokens,
-                      is_baseline=False):
+                      is_baseline=False,
+                      is_profile=False):
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path)
     offload_model = offload_model.bfloat16().to(device)
 
@@ -32,8 +34,11 @@ def benchmark_offload(state_path,
     predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-base")
     predictor.lm_head = nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
     predictor = predictor.bfloat16().to(device)
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     
-    torch.cuda.cudart().cudaProfilerStart()
+    if is_profile:
+        torch.cuda.cudart().cudaProfilerStart()
     batch = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -48,12 +53,17 @@ def benchmark_offload(state_path,
 
         print("predict pattern shape ", predict_pattern.shape)
 
-        fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, cache_engine, 
+        fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, executor, cache_engine, 
                             is_baseline=is_baseline, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
 
         batch += 1
         torch.cuda.nvtx.range_pop()
 
+        if batch == 8:
+            break
+    
+    if is_profile:
+        torch.cuda.cudart().cudaProfilerStop()
     end_event.record()
     torch.cuda.synchronize()
 
@@ -81,4 +91,5 @@ if __name__ == "__main__":
                       args.offload_size,
                       args.batch_size,
                       args.max_new_tokens,
-                      args.is_baseline)
+                      args.is_baseline,
+                      args.is_profile)

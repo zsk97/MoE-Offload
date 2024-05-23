@@ -154,7 +154,7 @@ def build_offload_switch(
     num_expert_layers = config.num_hidden_layers//config.encoder_sparse_step+config.num_decoder_layers//config.decoder_sparse_step
     offload_config = OffloadConfig(
         main_size=num_expert_layers * (num_experts - offload_per_layer),
-        offload_size=num_expert_layers * offload_per_layer,
+        offload_size=num_expert_layers * num_experts,
         buffer_size=buffer_size,
         offload_per_layer=offload_per_layer,
     )

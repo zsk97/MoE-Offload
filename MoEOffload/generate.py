@@ -1,5 +1,27 @@
 import torch
+import concurrent.futures
 from transformers.modeling_outputs import MoEModelOutput
+
+num_tasks = 1
+
+def launch_predict(predictor,
+                   input_ids,
+                   decode_input_ids,
+                   attention_mask,
+                   pask_key_values,
+                   encoder_outputs,
+                   predict_stream):
+    
+    torch.cuda.nvtx.range_push(f"Predict")
+    with torch.cuda.stream(predict_stream):
+        predictor(input_ids=input_ids,
+                decoder_input_ids=decode_input_ids,
+                attention_mask=attention_mask,
+                past_key_values=pask_key_values,
+                encoder_outputs=encoder_outputs,
+                use_cache=True)
+    torch.cuda.nvtx.range_pop()
+
 
 def fix_decode_generate(input_ids,
                         decode_ids,
@@ -7,6 +29,7 @@ def fix_decode_generate(input_ids,
                         predict_pattern,
                         model,
                         predictor, 
+                        executor,
                         cache_engine,
                         max_new_tokens=128,
                         past_key_values=None,
@@ -33,16 +56,10 @@ def fix_decode_generate(input_ids,
                 cache_engine.prefetch(pattern)
                 torch.cuda.nvtx.range_pop()
             
-            torch.cuda.nvtx.range_push(f"Predict")
-            with torch.cuda.stream(predict_stream):
-                predictor(input_ids=input_ids,
-                        decoder_input_ids=decoder_input_ids,
-                        attention_mask=attention_mask,
-                        past_key_values=past,
-                        encoder_outputs=encoder_outputs,
-                        use_cache=True)
-            torch.cuda.nvtx.range_pop()
-
+            futures = [executor.submit(launch_predict, predictor, input_ids, 
+                                                    decoder_input_ids, attention_mask, 
+                                                    past, encoder_outputs, predict_stream)]
+    
             torch.cuda.nvtx.range_push(f"Compute")
             with torch.cuda.stream(compute_stream):
                 outputs = model(input_ids=input_ids,
@@ -77,4 +94,7 @@ def fix_decode_generate(input_ids,
                                                 hidden_states=outputs.encoder_hidden_states,
                                                 attentions=outputs.encoder_attentions,
                                                 router_probs=outputs.encoder_router_logits)
+            
+            # Wait for all tasks to complete
+            concurrent.futures.wait(futures)
             torch.cuda.nvtx.range_pop()
