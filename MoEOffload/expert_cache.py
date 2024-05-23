@@ -71,7 +71,7 @@ class EvictionGroupInfo:
 
 
 class ExpertCache:
-    def __init__(self, make_module: callable, main_size: int, offload_size: int, buffer_size: int):
+    def __init__(self, make_module: callable, main_size: int, offload_size: int, buffer_size: int, num_layer: int = None):
         """Dynamically loads an array of modules with identical hyperparameters"""
         self.module_type = self.module_size = self.device = None
         self.active = False

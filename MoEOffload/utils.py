@@ -2,6 +2,7 @@ from contextlib import contextmanager
 import torch
 """ utility functions that help you process nested dicts, tuples, lists and namedtuples """
 
+from MoEOffload.custom_layers import SwitchMoeWrapperV1
 
 def nested_compare(t, u):
     """
@@ -99,3 +100,12 @@ def with_default_dtype(dtype):
         yield
     finally:
         torch.set_default_dtype(_dtype_original)
+
+def forward_pre_hook(module, input):
+    if isinstance(module, SwitchMoeWrapperV1):
+        torch.cuda.nvtx.range_push(f"Layer ID {module.layer_id} {module.__class__.__name__}")
+    else:
+        torch.cuda.nvtx.range_push(f"Layer ID {module.__class__.__name__}")
+
+def forward_post_hook(module, input, output):
+    torch.cuda.nvtx.range_pop()

@@ -1,6 +1,8 @@
 from MoEOffload.expert_cache import ExpertCache, ExpertCacheV1
 from MoEOffload.custom_layers import SwitchMoeWrapper, SwitchMoeWrapperV1
-from MoEOffload.utils import nested_flatten, nested_pack, with_default_dtype
+from MoEOffload.expert_wrapper import SwitchExpertWrapper
+from MoEOffload.utils import (nested_flatten, nested_pack, with_default_dtype,
+                              forward_pre_hook, forward_post_hook)
 
 from transformers.models.switch_transformers.configuration_switch_transformers import SwitchTransformersConfig
 from MoEOffload.models.switch_transformer import (
@@ -125,10 +127,8 @@ def make_and_load_expert_wrapper(
                 layer = getattr(expert, f"w{idx}")
                 w_to_load = MODEL_STATE_DICT[f'{module_idx}.w{idx}.weight']
                 layer.weight.data.copy_(w_to_load)
-        if is_baseline:
-            return SwitchMoeWrapper(expert, device)
         
-        return SwitchMoeWrapperV1(expert, device)
+        return SwitchExpertWrapper(expert, device)
 
 def build_offload_switch(
     offload_per_layer: int=16,
@@ -138,6 +138,7 @@ def build_offload_switch(
     device = torch.device("cuda:0"),
     config=None,
     is_baseline=False,
+    is_profile=False,
     ):
  
     if config is None:
@@ -148,6 +149,7 @@ def build_offload_switch(
         )
         config.offload = True
 
+    num_layers = config.num_hidden_layers + config.num_decoder_layers
     num_experts = config.num_experts
     num_expert_layers = config.num_hidden_layers//config.encoder_sparse_step+config.num_decoder_layers//config.decoder_sparse_step
     offload_config = OffloadConfig(
@@ -157,60 +159,84 @@ def build_offload_switch(
         offload_per_layer=offload_per_layer,
     )
 
+    def _make_module():
+        config = AutoConfig.from_pretrained(model_name)
+        expert = make_empty_expert(config).bfloat16()
+        return SwitchExpertWrapper(expert, device=device)
+    
     MoEWrapper = None
+    expertCache = None
+
     if is_baseline:
-        def _make_module():
-            config = AutoConfig.from_pretrained(model_name)
-            expert = make_empty_expert(config).bfloat16()
-            return SwitchMoeWrapper(expert, device=device)
+        expertCache = ExpertCache
         MoEWrapper = SwitchMoeWrapper
     else:
-        def _make_module():
-            config = AutoConfig.from_pretrained(model_name)
-            expert = make_empty_expert(config).bfloat16()
-            return SwitchMoeWrapperV1(expert, device=device)
-        MoEWrapper = SwitchMoeWrapper
+        expertCache = ExpertCacheV1
+        MoEWrapper = SwitchMoeWrapperV1
     
     with device, with_default_dtype(torch.bfloat16):
         model = SwitchTransformersForConditionalGeneration(config)
     
     model_config = config
-    expert_cache = ExpertCache(
+    expert_cache = expertCache(
         make_module=_make_module,
         main_size=offload_config.main_size,
         offload_size=offload_config.offload_size,
         buffer_size=offload_config.buffer_size,
+        num_layer=num_layers
     )
 
-    for layer_idx in trange(model_config.num_hidden_layers, desc="Loading experts"):
-        curr_layer = model.model.layers[layer_idx]
-        curr_layer.block_sparse_moe = MoEWrapper(
-            model_config,
-            layer_idx,
-            curr_layer.block_sparse_moe.gate,
-            expert_cache,
-        )
-
-        for expert_idx in range(model_config.num_local_experts):
-            do_offload = expert_idx < offload_config.offload_per_layer
-
-            expert_wrapper = make_and_load_expert_wrapper(
+    for block_type in ['encoder', 'decoder']:
+        if block_type == 'encoder':
+            num_block_layers = model_config.num_layers
+            sparse_step = model_config.encoder_sparse_step
+            block_inner_layer_id = 1
+            base_layer_idx = 0
+        else:
+            num_block_layers = model_config.num_decoder_layers
+            sparse_step = model_config.decoder_sparse_step
+            block_inner_layer_id = 2
+            base_layer_idx = model_config.num_layers
+        for block_idx in list(range(num_block_layers))[1:][::sparse_step]:
+            curr_layer = getattr(model, block_type).block[block_idx].layer[block_inner_layer_id]
+            curr_layer.mlp = MoEWrapper(
                 config=model_config,
-                quant_config=None,
-                states_dir=state_path,
-                expert_uid=(layer_idx, expert_idx),
-                device=device,
+                layer_id=block_idx+base_layer_idx,
+                gate=curr_layer.mlp.router,
+                expert_cache=expert_cache,
             )
 
-            expert_cache.add_expert(
-                uid=(layer_idx, expert_idx),
-                module=expert_wrapper,
-                eviction_group=layer_idx,
-                offload=do_offload,
-            )
+            for expert_idx in range(model_config.num_experts):
+                do_offload = expert_idx < offload_config.offload_per_layer
 
-            del expert_wrapper
-            torch.cuda.synchronize(device)
-            torch.cuda.empty_cache()
+                expert_wrapper = make_and_load_expert_wrapper(
+                    config=model_config,
+                    states_dir=state_path,
+                    expert_prefix=block_type,
+                    expert_uid=(base_layer_idx+block_idx, expert_idx),
+                    base_layer_idx=base_layer_idx,
+                    device=device,
+                )
 
-    return model
+                expert_cache.add_expert(
+                    uid=(base_layer_idx+block_idx, expert_idx),
+                    module=expert_wrapper,
+                    eviction_group=base_layer_idx+block_idx,
+                    offload=do_offload,
+                )
+
+                del expert_wrapper
+                torch.cuda.synchronize(device)
+                torch.cuda.empty_cache()
+    if MODEL_STATE_DICT is not None:
+        non_expert_dict = {}
+        for key, val in MODEL_STATE_DICT.items():
+            if 'expert' not in key:
+                non_expert_dict[key] = val
+        model.load_state_dict(non_expert_dict, True)
+
+    if is_profile:
+        for module in model.modules():
+            module.register_forward_pre_hook(forward_pre_hook)
+            module.register_forward_hook(forward_post_hook)
+    return model, expert_cache
