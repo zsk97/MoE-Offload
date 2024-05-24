@@ -35,6 +35,7 @@ def fix_decode_generate(input_ids,
                         past_key_values=None,
                         compute_stream=None,
                         predict_stream=None,
+                        is_predict=True,
                         is_baseline=False, 
                         device=torch.device("cuda:0")):
     # 初始化生成的令牌列表和past_key_values（用于存储注意力层的状态，加速和优化生成）
@@ -49,14 +50,15 @@ def fix_decode_generate(input_ids,
     model.eval()  # Put model in evaluation mode
     predictor.eval()
     with torch.no_grad():  # Disable gradient calculation
-        for step in range(max_new_tokens):
+        for step in range(1, max_new_tokens):
             torch.cuda.nvtx.range_push(f"Step {step}")
             if not is_baseline:
                 torch.cuda.nvtx.range_push(f"Prefetch")
                 cache_engine.prefetch(pattern)
                 torch.cuda.nvtx.range_pop()
             
-            futures = [executor.submit(launch_predict, predictor, input_ids, 
+            if is_predict:
+                futures = [executor.submit(launch_predict, predictor, input_ids, 
                                                     decoder_input_ids, attention_mask, 
                                                     past, encoder_outputs, predict_stream)]
     
@@ -95,6 +97,7 @@ def fix_decode_generate(input_ids,
                                                 attentions=outputs.encoder_attentions,
                                                 router_probs=outputs.encoder_router_logits)
             
-            # Wait for all tasks to complete
-            concurrent.futures.wait(futures)
+            if is_predict:
+                # Wait for all tasks to complete
+                concurrent.futures.wait(futures)
             torch.cuda.nvtx.range_pop()

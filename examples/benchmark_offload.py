@@ -17,7 +17,8 @@ def benchmark_offload(state_path,
                       batch_size,
                       max_new_tokens,
                       is_baseline=False,
-                      is_profile=False):
+                      is_profile=False,
+                      is_predict=False):
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path)
     offload_model = offload_model.bfloat16().to(device)
 
@@ -54,7 +55,7 @@ def benchmark_offload(state_path,
         print("predict pattern shape ", predict_pattern.shape)
 
         fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, executor, cache_engine, 
-                            is_baseline=is_baseline, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
+                            is_baseline=is_baseline, is_predict=is_predict, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
 
         batch += 1
         torch.cuda.nvtx.range_pop()
@@ -92,4 +93,5 @@ if __name__ == "__main__":
                       args.batch_size,
                       args.max_new_tokens,
                       args.is_baseline,
-                      args.is_profile)
+                      args.is_profile,
+                      args.is_predict)
