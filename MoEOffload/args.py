@@ -12,6 +12,7 @@ def parse_args():
     parser.add_argument('--is_baseline', action='store_true', help='Whether run baseline offload')
     parser.add_argument('--is_profile', action='store_true', help='Whether profile the run')
     parser.add_argument('--ipdb', action='store_true', help='Whether to use ipdb for debugging')
+    parser.add_argument('--is_predict', action='store_true', help='Whether run predictor')
 
     # Parse the arguments
     args = parser.parse_args()
