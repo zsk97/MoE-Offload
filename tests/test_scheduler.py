@@ -109,7 +109,8 @@ def postprocess_clusters(indices_within_cluster, n, k):
     balanced_clusters = balance_clusters(clusters, target_size)
     return list(balanced_clusters.values())
 
-def scheduler(pattern_list, num_epochs=30, k=8):
+def scheduler(pattern_list, offload_per_layer, batch_size, num_epochs=30):
+    k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
     indices_within_cluster = list(clusters.values())
@@ -119,20 +120,21 @@ def scheduler(pattern_list, num_epochs=30, k=8):
     for i, cluster in enumerate(balanced_cluster_indices):
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
-        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu().sum()
-        if num_activated_experts_per_layer > 16:
-            on_demand_expert += num_activated_experts_per_layer - 16
+        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
+        num_activated_experts_per_layer -= offload_per_layer
+        on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
         print(f"Balanced Cluster {i} ({len(cluster)}): {cluster} num_activated_experts_per_layer:{num_activated_experts_per_layer}")
     print("[Schedule] Number ondemand load ", on_demand_expert)
 
+    on_demand_expert = 0
     sorted_cluster_indices = list(range(pattern_list.shape[0]))
     for batch_id in range(len(balanced_cluster_indices)):
-        cluster = sorted_cluster_indices[batch_id*16:(batch_id+1)*16]
+        cluster = sorted_cluster_indices[batch_id*batch_size:(batch_id+1)*batch_size]
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
-        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu().sum()
-        if num_activated_experts_per_layer > 16:
-            on_demand_expert += num_activated_experts_per_layer - 16
+        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
+        num_activated_experts_per_layer -= offload_per_layer
+        on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
     print("[Sorted] Number ondemand load ", on_demand_expert)
 
     return balanced_cluster_indices
@@ -223,6 +225,7 @@ def decode_in_order(model,
     with torch.no_grad():
         for i in range(num_minibatch):
             # Create encoder outputs
+            torch.cuda.nvtx.range_push(f"Batch {i}")
             outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[i*batch_size:(i+1)*batch_size],
                                     hidden_states=encoder_outputs.encoder_hidden_states,
                                     attentions=encoder_outputs.encoder_attentions,
@@ -243,6 +246,7 @@ def decode_in_order(model,
                                 encoder_outputs=outputs,
                                 output_router_logits=True,
                                 use_cache=True)
+            torch.cuda.nvtx.range_pop()
     end_event.record()
     torch.cuda.synchronize()
     elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -263,6 +267,7 @@ def decode_in_select_batch(model,
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
     start_event.record()
+    duration = 0
     with torch.no_grad():
         for i in range(num_minibatch):
             select_index = batch_index[i]
@@ -277,6 +282,9 @@ def decode_in_select_batch(model,
             mask = attention_mask[select_index]
             decoder_input_ids = decode_id[select_index]
 
+            torch.cuda.synchronize()
+            start = time.time()
+
             cache_engine.prefetch(pattern)
 
             with torch.cuda.stream(compute_stream):
@@ -287,9 +295,14 @@ def decode_in_select_batch(model,
                                 encoder_outputs=outputs,
                                 output_router_logits=True,
                                 use_cache=True)
+            
+            torch.cuda.synchronize()
+            duration += time.time() - start
+
     end_event.record()
     torch.cuda.synchronize()
     elapsed_time_ms = start_event.elapsed_time(end_event)
+    print(f"Compute time: {duration * 1000} ms")
     print(f"Elapsed time: {elapsed_time_ms} ms")
 
 if __name__ == "__main__":
@@ -323,7 +336,7 @@ if __name__ == "__main__":
     decoder_input_ids = decode_id.int().to(device)
     batch_pattern = batch_pattern.to(device)
 
-    offload_model, cache_engine = build_offload_switch(offload_per_layer=16, state_path=state_path)
+    offload_model, cache_engine = build_offload_switch(offload_per_layer=16, state_path=state_path, is_baseline=False, is_profile=True)
     offload_model = offload_model.bfloat16().to(device)
 
     pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
@@ -331,9 +344,8 @@ if __name__ == "__main__":
 
     print("Token pattern shape ", token_pattern.shape)
 
-    indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), 30, 8)
-    balanced_cluster_indices = postprocess_clusters(indices_within_cluster, 128, 8)
-
+    indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), 8, 32, 30)
+    # balanced_cluster_indices = postprocess_clusters(indices_within_cluster, 128, 4)
 
     # Prefilling
     outputs = offload_model(input_ids=input_ids,
@@ -351,11 +363,14 @@ if __name__ == "__main__":
     print("Type ", type(outputs.past_key_values[0]))
     print("Shape ", outputs.past_key_values[0][0].shape)
 
-    # batch_key_value = key_value_in_order(outputs.past_key_values, 16)
+    # batch_key_value = key_value_in_order(outputs.past_key_values, 32)
 
-    # decode_in_order(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, 8)
+    # torch.cuda.cudart().cudaProfilerStart()
+    # decode_in_order(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, 4)
+    # torch.cuda.cudart().cudaProfilerStop()
 
-    batch_key_value = key_value_select_batch(outputs.past_key_values, balanced_cluster_indices)
+    batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
 
-    decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, balanced_cluster_indices)
-    
+    torch.cuda.cudart().cudaProfilerStart()
+    decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, indices_within_cluster)
+    torch.cuda.cudart().cudaProfilerStop()
