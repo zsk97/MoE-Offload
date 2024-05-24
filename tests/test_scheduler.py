@@ -109,7 +109,7 @@ def postprocess_clusters(indices_within_cluster, n, k):
     balanced_clusters = balance_clusters(clusters, target_size)
     return list(balanced_clusters.values())
 
-def scheduler(pattern_list, offload_per_layer, batch_size, num_epochs=30):
+def scheduler(pattern_list, cache_size, batch_size, num_epochs=30):
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
@@ -121,7 +121,7 @@ def scheduler(pattern_list, offload_per_layer, batch_size, num_epochs=30):
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
         num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
-        num_activated_experts_per_layer -= offload_per_layer
+        num_activated_experts_per_layer -= cache_size
         on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
         print(f"Balanced Cluster {i} ({len(cluster)}): {cluster} num_activated_experts_per_layer:{num_activated_experts_per_layer}")
     print("[Schedule] Number ondemand load ", on_demand_expert)
@@ -133,7 +133,7 @@ def scheduler(pattern_list, offload_per_layer, batch_size, num_epochs=30):
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
         num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
-        num_activated_experts_per_layer -= offload_per_layer
+        num_activated_experts_per_layer -= cache_size
         on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
     print("[Sorted] Number ondemand load ", on_demand_expert)
 
