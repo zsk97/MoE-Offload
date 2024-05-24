@@ -1,5 +1,6 @@
 import torch
 import time
+import numpy as np
 
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
@@ -57,13 +58,14 @@ def kmeans_similarity(data_similarity, k, num_epochs=100):
 
     # 收集每个簇的成员索引
     clusters = {i: (labels == i).nonzero(as_tuple=True)[0].cpu().numpy().tolist() for i in range(k)}
+    # print([len(x) for x in clusters.values()])
+    assert sum([len(x) for x in clusters.values()])==n
     return labels, indices, clusters
-    # return list(clusters.items())
 
 def sim_func(pattern_list):
     # 将矩阵展平
-    patterns = torch.stack(pattern_list, dim=0)
-    flat_patterns = patterns.view(patterns.size(0), -1)
+    # patterns = torch.stack(pattern_list, dim=0)
+    flat_patterns = pattern_list.view(pattern_list.size(0), -1)
     # 计算两两之间的Hamming距离
     dist = torch.cdist(flat_patterns, flat_patterns, p=0)
     # 将Hamming距离转换为相似度
@@ -71,11 +73,6 @@ def sim_func(pattern_list):
     print(similarity)
     return similarity
 
-def scheduler(pattern_list, num_epochs=30, k=8):
-    data_similarity = sim_func(pattern_list)
-    labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
-    indices_within_cluster = list(clusters.values())
-    return indices_within_cluster
 
 def balance_clusters(clusters, target_size):
     # 将簇的索引列表转换为数组以便操作
@@ -94,13 +91,12 @@ def balance_clusters(clusters, target_size):
         adjusted_clusters[idx] = members[:-excess]  # 移除多余的成员
 
     # 将收集到的数据点重新分配到需要填充的簇中
-    for idx, member in transfer_list:
-        for u_idx, u_members in underfilled.items():
-            if len(u_members) < target_size:
-                adjusted_clusters[u_idx].append(member)
-                underfilled[u_idx].append(member)
-                if len(u_members) + 1 == target_size:
-                    break
+    for u_idx, u_members in underfilled.items():
+        num_to_fill = target_size -  len(u_members)
+        while num_to_fill:
+            member = transfer_list.pop()[1]
+            adjusted_clusters[u_idx].append(member)
+            num_to_fill -= 1
 
     # 确保调整后的簇大小正确
     assert all(len(members) == target_size for members in adjusted_clusters.values())
@@ -113,6 +109,33 @@ def postprocess_clusters(indices_within_cluster, n, k):
     balanced_clusters = balance_clusters(clusters, target_size)
     return list(balanced_clusters.values())
 
+def scheduler(pattern_list, num_epochs=30, k=8):
+    data_similarity = sim_func(pattern_list)
+    labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
+    indices_within_cluster = list(clusters.values())
+    
+    balanced_cluster_indices = postprocess_clusters(indices_within_cluster, len(pattern_list), k)
+    on_demand_expert = 0
+    for i, cluster in enumerate(balanced_cluster_indices):
+        cluster_pattern_list = [pattern_list[idx] for idx in cluster]
+        cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
+        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu().sum()
+        if num_activated_experts_per_layer > 16:
+            on_demand_expert += num_activated_experts_per_layer - 16
+        print(f"Balanced Cluster {i} ({len(cluster)}): {cluster} num_activated_experts_per_layer:{num_activated_experts_per_layer}")
+    print("[Schedule] Number ondemand load ", on_demand_expert)
+
+    sorted_cluster_indices = list(range(pattern_list.shape[0]))
+    for batch_id in range(len(balanced_cluster_indices)):
+        cluster = sorted_cluster_indices[batch_id*16:(batch_id+1)*16]
+        cluster_pattern_list = [pattern_list[idx] for idx in cluster]
+        cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
+        num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu().sum()
+        if num_activated_experts_per_layer > 16:
+            on_demand_expert += num_activated_experts_per_layer - 16
+    print("[Sorted] Number ondemand load ", on_demand_expert)
+
+    return balanced_cluster_indices
 # 使用后处理调整簇的大小
 # balanced_cluster_indices = postprocess_clusters(indices_within_cluster, n, k)
 # for i, cluster in enumerate(balanced_cluster_indices):
@@ -138,7 +161,7 @@ def init_env():
     misc.init_distributed_mode()
     fs_init.initialize_model_parallel(torch.distributed.get_world_size())
 
-def key_value_in_order(key_values, batch_size, num_batch):
+def key_value_in_order(key_values, batch_size):
     key_values_list = []
 
     num_layer = len(key_values)
@@ -153,18 +176,50 @@ def key_value_in_order(key_values, batch_size, num_batch):
         for tensors in zip(*kv_lists):
             results.append(tuple(tensors))
         
-        print("Length tuple ", len(results[0]))
-        break
+        key_values_list.append(results)
+    
+    final_results = []
+    for elements in zip(*key_values_list):
+        final_results.append(tuple(elements))
+    
+    return final_results
+
+def key_value_select_batch(key_values, batch_idx):
+    key_values_list = []
+
+    num_layer = len(key_values)
+    for i in range(num_layer):
+        kv_lists = []
+        for j in range(4):
+            subtensors = [key_values[i][j][index] for index in batch_idx]
+            kv_lists.append(subtensors)
+        
+        results = []
+        for tensors in zip(*kv_lists):
+            results.append(tuple(tensors))
+
+        key_values_list.append(results)
+    
+    final_results = []
+    for elements in zip(*key_values_list):
+        final_results.append(tuple(elements))
+
+    return final_results
+
 def decode_in_order(model, 
                     cache_engine, 
                     encoder_outputs, 
                     decode_id, 
                     decode_pattern, 
                     attention_mask,
+                    batch_key_value,
                     num_minibatch):
     batch_size = decode_id.shape[0] // num_minibatch
 
     compute_stream = torch.cuda.Stream()
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    start_event.record()
     with torch.no_grad():
         for i in range(num_minibatch):
             # Create encoder outputs
@@ -174,7 +229,7 @@ def decode_in_order(model,
                                     router_probs=encoder_outputs.encoder_router_logits)
 
             pattern = decode_pattern[i*batch_size:(i+1)*batch_size].sum(0)[1]
-            key_values = encoder_outputs.past_key_values[i*batch_size:(i+1)*batch_size]
+            key_values = batch_key_value[i]
             mask = attention_mask[i*batch_size:(i+1)*batch_size]
             decoder_input_ids = decode_id[i*batch_size:(i+1)*batch_size]
 
@@ -188,9 +243,68 @@ def decode_in_order(model,
                                 encoder_outputs=outputs,
                                 output_router_logits=True,
                                 use_cache=True)
-            
+    end_event.record()
+    torch.cuda.synchronize()
+    elapsed_time_ms = start_event.elapsed_time(end_event)
+    print(f"Elapsed time: {elapsed_time_ms} ms")
+
+def decode_in_select_batch(model, 
+                        cache_engine, 
+                        encoder_outputs, 
+                        decode_id, 
+                        decode_pattern, 
+                        attention_mask,
+                        batch_key_value,
+                        batch_index):
+    num_minibatch = len(batch_index)
+    batch_size = decode_id.shape[0] // num_minibatch
+
+    compute_stream = torch.cuda.Stream()
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    start_event.record()
+    with torch.no_grad():
+        for i in range(num_minibatch):
+            select_index = batch_index[i]
+            # Create encoder outputs
+            outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[select_index],
+                                    hidden_states=encoder_outputs.encoder_hidden_states,
+                                    attentions=encoder_outputs.encoder_attentions,
+                                    router_probs=encoder_outputs.encoder_router_logits)
+
+            pattern = decode_pattern[select_index].sum(0)[1]
+            key_values = batch_key_value[i]
+            mask = attention_mask[select_index]
+            decoder_input_ids = decode_id[select_index]
+
+            cache_engine.prefetch(pattern)
+
+            with torch.cuda.stream(compute_stream):
+                outputs = model(input_ids=input_ids,
+                                decoder_input_ids=decoder_input_ids,
+                                attention_mask=mask,
+                                past_key_values=key_values,
+                                encoder_outputs=outputs,
+                                output_router_logits=True,
+                                use_cache=True)
+    end_event.record()
+    torch.cuda.synchronize()
+    elapsed_time_ms = start_event.elapsed_time(end_event)
+    print(f"Elapsed time: {elapsed_time_ms} ms")
 
 if __name__ == "__main__":
+    # n = 128  # 数据点的数量
+    # L = 6
+    # E = 32
+    # k = 4    # 簇的数量
+    # data = [torch.randint(0, 2, (L, E)).cuda().float() for _ in range(n)]
+
+    # indices_within_cluster = scheduler(data, 30, k)
+    # balanced_cluster_indices = postprocess_clusters(indices_within_cluster, n, k)
+    # for i, cluster in enumerate(balanced_cluster_indices):
+    #     print(f"Balanced Cluster {i} ({len(cluster)}): {cluster}")
+
+
     init_env()
 
     rank = torch.distributed.get_rank()
@@ -215,6 +329,12 @@ if __name__ == "__main__":
     pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
     cache_engine.prefetch(pattern)
 
+    print("Token pattern shape ", token_pattern.shape)
+
+    indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), 30, 8)
+    balanced_cluster_indices = postprocess_clusters(indices_within_cluster, 128, 8)
+
+
     # Prefilling
     outputs = offload_model(input_ids=input_ids,
                             decoder_input_ids=decoder_input_ids,
@@ -231,8 +351,11 @@ if __name__ == "__main__":
     print("Type ", type(outputs.past_key_values[0]))
     print("Shape ", outputs.past_key_values[0][0].shape)
 
-    key_value_in_order(outputs.past_key_values, 8, 0)
-    exit(0)
+    # batch_key_value = key_value_in_order(outputs.past_key_values, 16)
 
-    decode_in_order(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, 4)
+    # decode_in_order(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, 8)
+
+    batch_key_value = key_value_select_batch(outputs.past_key_values, balanced_cluster_indices)
+
+    decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, balanced_cluster_indices)
     
