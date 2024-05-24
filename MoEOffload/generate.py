@@ -80,6 +80,7 @@ def fix_decode_generate(input_ids,
 
             # 应用temperature来调整预测分布
             generated_tokens.append(next_token)
+            
             # decoder_input_ids = torch.cat([decoder_input_ids, next_token], dim=-1)
             decoder_input_ids = next_token
             

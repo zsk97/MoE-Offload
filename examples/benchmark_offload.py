@@ -19,7 +19,7 @@ def benchmark_offload(state_path,
                       is_baseline=False,
                       is_profile=False,
                       is_predict=False):
-    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path)
+    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, is_baseline=is_baseline)
     offload_model = offload_model.bfloat16().to(device)
 
     dataset = load_dataset("marsggbo/bigbench4switch32_pattern_predictor_tmp")
