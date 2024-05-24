@@ -23,21 +23,33 @@ def process_dataset(dataset, tokenizer, batch_size):
         # Padding prompts
         input_data = tokenizer(prompts, return_tensors="pt", padding=True, return_attention_mask=True)
 
-        decode_id = torch.Tensor(decode_id)
+        decode_id = torch.Tensor(decode_id).long()
         decode_length = decode_id.shape[-1]
 
         # Deal with pattner
-        decode_pattern = torch.Tensor(decode_pattern)
-        decode_pattern = decode_pattern.permute((2, 1, 0))
-        
-        # Switch Transformer use MoE in non-adjacent layer
-        # Currently, we only have pattern for decoder
+        decode_pattern = torch.Tensor(decode_pattern).long() # (bs, num_moe_layers, seq_len)
 
-        pattern = torch.zeros((decode_length, num_layer, num_expert), dtype=torch.int)
-        for token_id in range(decode_length):
-            for j in range(num_moe_layer):
-                decode_layer_id = num_encoder_layer + j*2 + 1
-                batch_pattern = decode_pattern[token_id][j].to(int).flatten().unique().tolist()
-                pattern[token_id][decode_layer_id][batch_pattern] = 1
+        batch_size, _, seq_len = decode_pattern.shape
+        onehot_decode_pattern = torch.nn.functional.one_hot(
+            decode_pattern, num_classes=num_expert
+        ) # (bs, seq_len, num_moe_layers, num_expert)
+        onehot_decode_pattern = onehot_decode_pattern.permute(0, 2, 1, 3) # (bs, num_moe_layers, seq_len, num_expert)
+        batch_decode_pattern_real = onehot_decode_pattern.sum(0) # (seq_len, num_moe_layers, num_expert))
+        batch_encode_pattern = torch.zeros((seq_len, num_encoder_layer, num_expert), dtype=torch.long)
+        batch_decode_pattern = torch.zeros((seq_len, num_encoder_layer, num_expert), dtype=torch.long)
+        indices = list(range(1, num_encoder_layer, 2))
+        batch_decode_pattern[:, indices, :] = batch_decode_pattern_real
+        pattern = torch.cat((batch_encode_pattern, batch_decode_pattern), dim=1)
+
+        # decode_pattern = decode_pattern.permute((2, 1, 0))
+        # # Switch Transformer use MoE in non-adjacent layer
+        # # Currently, we only have pattern for decoder
+
+        # pattern = torch.zeros((decode_length, num_layer, num_expert), dtype=torch.long)
+        # for token_id in range(decode_length):
+        #     for j in range(num_moe_layer):
+        #         decode_layer_id = num_encoder_layer + j*2 + 1
+        #         batch_pattern = decode_pattern[token_id][j].to(torch.long).flatten().unique().tolist()
+        #         pattern[token_id][decode_layer_id][batch_pattern] = 1
 
         yield input_data, decode_id, pattern
