@@ -1,4 +1,5 @@
 import torch
+import logging
 
 def process_dataset(dataset, tokenizer, batch_size, top_n=0):
     len_dataset = len(dataset['train'])
@@ -7,6 +8,11 @@ def process_dataset(dataset, tokenizer, batch_size, top_n=0):
     num_expert = 32
     num_layer = 24
     num_encoder_layer = 12
+
+    if top_n == 0:
+        logging.info("Process real decode pattern")
+    else:
+        logging.info(f"Process top {top_n} pattern")
 
     for i in range(num_batch):
         prompts = []
@@ -30,6 +36,7 @@ def process_dataset(dataset, tokenizer, batch_size, top_n=0):
 
         # Deal with pattner
         decode_pattern = torch.Tensor(decode_pattern).long()
+        decode_pattern = decode_pattern.permute((0, 2, 1))
         predict_pattern = torch.Tensor(predict_pattern).long() # (bs, seq_len, num_layer, top3_indices)
         
         pattern = None
