@@ -16,13 +16,14 @@ def benchmark_offload(state_path,
                       offload_size,
                       batch_size,
                       max_new_tokens,
+                      top_n,
                       is_baseline=False,
                       is_profile=False,
                       is_predict=False):
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, is_baseline=is_baseline)
     offload_model = offload_model.bfloat16().to(device)
 
-    dataset = load_dataset("marsggbo/bigbench4switch32_pattern_predictor_tmp")
+    dataset = load_dataset("marsggbo/bigbench4switch32_patternand_pattern_predictor_gen")
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()
@@ -43,7 +44,7 @@ def benchmark_offload(state_path,
     batch = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    for input_data, decode_id, pattern in process_dataset(dataset, tokenizer, batch_size):
+    for input_data, decode_id, pattern in process_dataset(dataset, tokenizer, batch_size, top_n):
         torch.cuda.nvtx.range_push(f"Batch {batch}")
         if batch == 1:
             start_event.record()
@@ -92,6 +93,7 @@ if __name__ == "__main__":
                       args.offload_size,
                       args.batch_size,
                       args.max_new_tokens,
+                      args.top_n,
                       args.is_baseline,
                       args.is_profile,
                       args.is_predict)
