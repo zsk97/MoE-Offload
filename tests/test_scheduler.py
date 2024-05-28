@@ -20,12 +20,42 @@ def initialize_indices(n, k):
     indices = torch.randperm(n)[:k]
     return indices
 
-def update_clusters(data_similarity, indices):
+def update_clusters(data_similarity, indices, n, k, is_balanced=False):
     """更新簇分配，选择与质心最相似的点"""
     # 提取与质心相关的相似度
     cluster_similarities = data_similarity[:, indices]
     # 每个点被分配到最相似质心的簇中
     labels = torch.argmax(cluster_similarities, dim=1)
+
+    if is_balanced:
+        # 每个簇的目标大小
+        target_cluster_size = n // k
+        cluster_sizes = torch.bincount(labels, minlength=k)
+
+        # 首先识别并处理超出目标大小的簇
+        for i in range(k):
+            if cluster_sizes[i] > target_cluster_size:
+                excess_amount = cluster_sizes[i] - target_cluster_size
+                cluster_indices = (labels == i).nonzero(as_tuple=True)[0]
+                # 根据与质心的相似度排序，保留前 target_cluster_size 个最相似的点
+                similarities = cluster_similarities[cluster_indices, i]
+                _, sorted_indices = similarities.sort(descending=True)
+                # 设置超出部分的点标签为未分配（-1或可以用一个特殊值）
+                labels[cluster_indices[sorted_indices[target_cluster_size:]]] = -1
+
+        # 处理数量少于目标大小的簇
+        unassigned_indices = (labels == -1).nonzero(as_tuple=True)[0]
+        unassigned_similarities = data_similarity[unassigned_indices, :]
+        for i in range(k):
+            if cluster_sizes[i] < target_cluster_size:
+                needed_amount = target_cluster_size - cluster_sizes[i]
+                # 选择未分配点中相对于当前质心相似度最高的点
+                top_candidates = torch.topk(unassigned_similarities[:, i], needed_amount).indices
+                labels[unassigned_indices[top_candidates]] = i
+                # 更新未分配点列表
+                unassigned_indices = (labels == -1).nonzero(as_tuple=True)[0]
+                unassigned_similarities = data_similarity[unassigned_indices, :]
+
     return labels
 
 def update_centroids(data_similarity, labels, k):
@@ -40,16 +70,20 @@ def update_centroids(data_similarity, labels, k):
         within_cluster_similarities.append(within_cluster_similarity.max())
     return new_indices, within_cluster_similarities
 
-def kmeans_similarity(data_similarity, k, num_epochs=100):
+def kmeans_similarity(data_similarity, k, num_epochs=100, is_balanced=True):
     """执行基于相似度矩阵的K-means聚类"""
     n = data_similarity.size(0)
     indices = initialize_indices(n, k).cuda()
     labels = torch.zeros(n, dtype=torch.long, device='cuda')
 
     for epoch in range(num_epochs):
-        new_labels = update_clusters(data_similarity, indices)
+        new_labels = update_clusters(data_similarity, indices, n, k, is_balanced)
+        if len(set(new_labels.cpu().tolist()))<k:
+            # in case some clusters have only one data point except centroids point
+            # re-initialize the centroids to avoid empty clusters
+            indices = initialize_indices(n, k).cuda()
+            continue
         if torch.equal(labels, new_labels):
-            # print('break', epoch)
             break
         labels = new_labels
         indices, within_cluster_similarities = update_centroids(data_similarity, labels, k)
@@ -70,95 +104,39 @@ def sim_func(pattern_list):
     dist = torch.cdist(flat_patterns, flat_patterns, p=0)
     # 将Hamming距离转换为相似度
     similarity = 1 - dist / flat_patterns.size(1)
-    print(similarity)
     return similarity
 
-
-def balance_clusters(clusters, target_size):
-    # 将簇的索引列表转换为数组以便操作
-    cluster_sizes = {i: len(cluster) for i, cluster in clusters.items()}
-    overfilled = {i: members for i, members in clusters.items() if len(members) > target_size}
-    underfilled = {i: members for i, members in clusters.items() if len(members) < target_size}
-
-    # 调整簇中的数据点分配
-    adjusted_clusters = dict(clusters)  # 开始调整的副本
-    transfer_list = []  # 存储需要移动的数据点
-
-    # 收集过多的数据点
-    for idx, members in overfilled.items():
-        excess = len(members) - target_size
-        transfer_list.extend((idx, member) for member in members[-excess:])
-        adjusted_clusters[idx] = members[:-excess]  # 移除多余的成员
-
-    # 将收集到的数据点重新分配到需要填充的簇中
-    for u_idx, u_members in underfilled.items():
-        num_to_fill = target_size -  len(u_members)
-        while num_to_fill:
-            member = transfer_list.pop()[1]
-            adjusted_clusters[u_idx].append(member)
-            num_to_fill -= 1
-
-    # 确保调整后的簇大小正确
-    assert all(len(members) == target_size for members in adjusted_clusters.values())
-
-    return adjusted_clusters
-
-def postprocess_clusters(indices_within_cluster, n, k):
-    target_size = n // k
-    clusters = {i: cluster for i, cluster in enumerate(indices_within_cluster)}
-    balanced_clusters = balance_clusters(clusters, target_size)
-    return list(balanced_clusters.values())
-
-def scheduler(pattern_list, cache_size, batch_size, num_epochs=30):
+def scheduler(pattern_list, cache_size, batch_size, num_epochs=30, is_balanced=True, verbose=False):
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
-    labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
+    labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
-    
-    balanced_cluster_indices = indices_within_cluster
-    balanced_cluster_indices = postprocess_clusters(indices_within_cluster, len(pattern_list), k)
-    on_demand_expert = 0
-    for i, cluster in enumerate(balanced_cluster_indices):
+
+    on_demand_expert_schedule = []
+    for i, cluster in enumerate(indices_within_cluster):
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
         num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
         num_activated_experts_per_layer -= cache_size
-        on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
-        print(f"Balanced Cluster {i} ({len(cluster)}): {cluster} num_activated_experts_per_layer:{num_activated_experts_per_layer}")
-    print("[Schedule] Number ondemand load ", on_demand_expert)
+        on_demand_expert_schedule.append(torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0]))
+    if verbose:
+        print("[Schedule] Number ondemand load ", sum(on_demand_expert_schedule), on_demand_expert_schedule)
 
-    on_demand_expert = 0
+    on_demand_expert_sequential = []
     sorted_cluster_indices = list(range(pattern_list.shape[0]))
-    for batch_id in range(len(balanced_cluster_indices)):
+    for batch_id in range(len(indices_within_cluster)):
         cluster = sorted_cluster_indices[batch_id*batch_size:(batch_id+1)*batch_size]
         cluster_pattern_list = [pattern_list[idx] for idx in cluster]
         cluster_pattern = torch.stack(cluster_pattern_list, dim=0).sum(0)
         num_activated_experts_per_layer = (cluster_pattern>0).sum(-1).cpu()
         num_activated_experts_per_layer -= cache_size
-        on_demand_expert += torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0])
-    print("[Sorted] Number ondemand load ", on_demand_expert)
+        on_demand_expert_sequential.append(torch.sum(num_activated_experts_per_layer[num_activated_experts_per_layer > 0]))
+    if verbose:
+        print("[Sorted] Number ondemand load ", sum(on_demand_expert_sequential), on_demand_expert_sequential)
 
-    return balanced_cluster_indices
-# 使用后处理调整簇的大小
-# balanced_cluster_indices = postprocess_clusters(indices_within_cluster, n, k)
-# for i, cluster in enumerate(balanced_cluster_indices):
-#     print(f"Balanced Cluster {i} ({len(cluster)}): {cluster}")
-# 示例用法
-# n = 128  # 数据点的数量
-# L = 6
-# E = 32
-# k = 2    # 簇的数量
-# data = [torch.randint(0, 2, (L, E)).cuda().float() for _ in range(n)]
+    return indices_within_cluster, (sum(on_demand_expert_schedule).item(), sum(on_demand_expert_sequential).item())
 
-# for i in range(10):
-#     indices_within_cluster = scheduler(data)
 
-# start = time.time()
-# indices_within_cluster = scheduler(data)
-# end = time.time()
-# print("Duration ", (end - start)*1000 )
-# for i, cluster in enumerate(indices_within_cluster):
-#     print(f"Cluster {i} ({len(cluster)}): {cluster}")
 def init_env():
     # define the model
     misc.init_distributed_mode()
@@ -193,16 +171,11 @@ def key_value_select_batch(key_values, batch_idx):
         kv_lists = []
         for j in range(4):
             subtensors = [key_values[i][j][index] for index in batch_idx]
-            # for k in range(len(subtensors)):
-            #     print(f"Shape {k} ", subtensors[k].shape)
             kv_lists.append(subtensors)
         
         results = []
         for tensors in zip(*kv_lists):
             results.append(tuple(tensors))
-        
-        # for k in range(4):
-        #     print(f"Layer {i} ", results[k][0].shape)
 
         key_values_list.append(results)
     
@@ -226,12 +199,14 @@ def key_value_select_merge(key_value_list, batch_idx):
     for i in range(num_layer):
         kv_lists = []
         for j in range(4):
-            if j < 2:
+            if j < 2:  
                 kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_self), dtype=kv_type, device=device)
+                print("KV tensor shape ", kv_tensor.shape)
             else:
                 kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_cross), dtype=kv_type, device=device)
+                print("KV tensor shape ", kv_tensor.shape)
             for batch_id in range(num_batch):
-                # print(f"{i}, {j}, {batch_id}")
+                print("Fill tensor shape ", key_value_list[batch_id][i][j].shape)
                 kv_tensor[batch_idx[batch_id], ...] = key_value_list[batch_id][i][j]
             kv_lists.append(kv_tensor)
         
@@ -350,7 +325,7 @@ def decode_in_select_batch(model,
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
 
             # reschedule
-            batch_index = scheduler(decode_pattern[:, token_id+1].float().cuda(), cache_size, batch_size, 30)
+            batch_index, _ = scheduler(decode_pattern[:, token_id+1].float().cuda(), cache_size, batch_size, 30)
 
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
 
@@ -414,7 +389,7 @@ if __name__ == "__main__":
         decode_in_order(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, 4)
         torch.cuda.cudart().cudaProfilerStop()
     else:
-        indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), cache_size, batch_size, 30)
+        indices_within_cluster, _ = scheduler(token_pattern[:, 0].float().to(device), cache_size, batch_size, 30)
         print("Origin KV cache size ", outputs.past_key_values[0][0].shape)
         print("Origin probelm size ", outputs.past_key_values[0][2].shape)
         batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
@@ -422,8 +397,4 @@ if __name__ == "__main__":
         print("After scheduleproblem size ", batch_key_value[0][0][2].shape)
         decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, cache_size, batch_size, indices_within_cluster)
 
-    # batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
 
-    # torch.cuda.cudart().cudaProfilerStart()
-    # decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, indices_within_cluster)
-    # torch.cuda.cudart().cudaProfilerStop()
