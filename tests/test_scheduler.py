@@ -115,6 +115,7 @@ def scheduler(pattern_list, cache_size, batch_size, num_epochs=30):
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs)
     indices_within_cluster = list(clusters.values())
     
+    balanced_cluster_indices = indices_within_cluster
     balanced_cluster_indices = postprocess_clusters(indices_within_cluster, len(pattern_list), k)
     on_demand_expert = 0
     for i, cluster in enumerate(balanced_cluster_indices):
@@ -172,8 +173,6 @@ def key_value_in_order(key_values, batch_size):
         for j in range(4):
             kv_lists.append(torch.split(key_values[i][j], batch_size, dim=0))
         
-        print("Length ", len(kv_lists[0]))
-        
         results = []
         for tensors in zip(*kv_lists):
             results.append(tuple(tensors))
@@ -194,11 +193,16 @@ def key_value_select_batch(key_values, batch_idx):
         kv_lists = []
         for j in range(4):
             subtensors = [key_values[i][j][index] for index in batch_idx]
+            # for k in range(len(subtensors)):
+            #     print(f"Shape {k} ", subtensors[k].shape)
             kv_lists.append(subtensors)
         
         results = []
         for tensors in zip(*kv_lists):
             results.append(tuple(tensors))
+        
+        # for k in range(4):
+        #     print(f"Layer {i} ", results[k][0].shape)
 
         key_values_list.append(results)
     
@@ -208,13 +212,43 @@ def key_value_select_batch(key_values, batch_idx):
 
     return final_results
 
+def key_value_select_merge(key_value_list, batch_idx):
+    num_batch = len(key_value_list)
+    num_layer = len(key_value_list[0])
+
+    batch_size, *kv_shape_self = key_value_list[0][0][0].shape
+    _, *kv_shape_cross = key_value_list[0][0][2].shape
+    kv_type = key_value_list[0][0][0].dtype
+    device = key_value_list[0][0][0].device
+
+    merge_kv_list = []
+    kv_tensor = None
+    for i in range(num_layer):
+        kv_lists = []
+        for j in range(4):
+            if j < 2:
+                kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_self), dtype=kv_type, device=device)
+            else:
+                kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_cross), dtype=kv_type, device=device)
+            for batch_id in range(num_batch):
+                # print(f"{i}, {j}, {batch_id}")
+                kv_tensor[batch_idx[batch_id], ...] = key_value_list[batch_id][i][j]
+            kv_lists.append(kv_tensor)
+        
+        merge_kv_list.append(tuple(kv_lists))
+
+    return tuple(merge_kv_list)
+
+
 def decode_in_order(model, 
                     cache_engine, 
                     encoder_outputs, 
+                    input_id,
                     decode_id, 
                     decode_pattern, 
                     attention_mask,
                     batch_key_value,
+                    max_new_tokens,
                     num_minibatch):
     batch_size = decode_id.shape[0] // num_minibatch
 
@@ -223,30 +257,35 @@ def decode_in_order(model,
     end_event = torch.cuda.Event(enable_timing=True)
     start_event.record()
     with torch.no_grad():
-        for i in range(num_minibatch):
-            # Create encoder outputs
-            torch.cuda.nvtx.range_push(f"Batch {i}")
-            outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[i*batch_size:(i+1)*batch_size],
-                                    hidden_states=encoder_outputs.encoder_hidden_states,
-                                    attentions=encoder_outputs.encoder_attentions,
-                                    router_probs=encoder_outputs.encoder_router_logits)
+        for token_id in range(max_new_tokens):
+            for i in range(num_minibatch):
+                # Create encoder outputs
+                torch.cuda.nvtx.range_push(f"Batch {i}")
+                outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[i*batch_size:(i+1)*batch_size],
+                                        hidden_states=encoder_outputs.encoder_hidden_states,
+                                        attentions=encoder_outputs.encoder_attentions,
+                                        router_probs=encoder_outputs.encoder_router_logits)
 
-            pattern = decode_pattern[i*batch_size:(i+1)*batch_size].sum(0)[1]
-            key_values = batch_key_value[i]
-            mask = attention_mask[i*batch_size:(i+1)*batch_size]
-            decoder_input_ids = decode_id[i*batch_size:(i+1)*batch_size]
+                pattern = decode_pattern[i*batch_size:(i+1)*batch_size].sum(0)[token_id]
+                key_values = batch_key_value[i]
+                mask = attention_mask[i*batch_size:(i+1)*batch_size]
+                decoder_input_ids = decode_id[i*batch_size:(i+1)*batch_size, token_id]
+                decoder_input_ids = torch.unsqueeze(decoder_input_ids, dim=-1).to(torch.long)
+                input = input_id[i*batch_size:(i+1)*batch_size]
 
-            cache_engine.prefetch(pattern)
+                cache_engine.prefetch(pattern)
 
-            with torch.cuda.stream(compute_stream):
-                outputs = model(input_ids=input_ids,
-                                decoder_input_ids=decoder_input_ids,
-                                attention_mask=mask,
-                                past_key_values=key_values,
-                                encoder_outputs=outputs,
-                                output_router_logits=True,
-                                use_cache=True)
-            torch.cuda.nvtx.range_pop()
+                with torch.cuda.stream(compute_stream):
+                    outputs = model(input_ids=input,
+                                    decoder_input_ids=decoder_input_ids,
+                                    attention_mask=mask,
+                                    past_key_values=key_values,
+                                    encoder_outputs=outputs,
+                                    output_router_logits=True,
+                                    use_cache=True)
+                torch.cuda.nvtx.range_pop()
+
+                batch_key_value[i] = outputs.past_key_values
     end_event.record()
     torch.cuda.synchronize()
     elapsed_time_ms = start_event.elapsed_time(end_event)
@@ -254,14 +293,17 @@ def decode_in_order(model,
 
 def decode_in_select_batch(model, 
                         cache_engine, 
-                        encoder_outputs, 
+                        encoder_outputs,
+                        input_ids, 
                         decode_id, 
                         decode_pattern, 
                         attention_mask,
                         batch_key_value,
+                        max_new_tokens,
+                        batch_size,
+                        cache_size,
                         batch_index):
     num_minibatch = len(batch_index)
-    batch_size = decode_id.shape[0] // num_minibatch
 
     compute_stream = torch.cuda.Stream()
     start_event = torch.cuda.Event(enable_timing=True)
@@ -269,35 +311,48 @@ def decode_in_select_batch(model,
     start_event.record()
     duration = 0
     with torch.no_grad():
-        for i in range(num_minibatch):
-            select_index = batch_index[i]
-            # Create encoder outputs
-            outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[select_index],
-                                    hidden_states=encoder_outputs.encoder_hidden_states,
-                                    attentions=encoder_outputs.encoder_attentions,
-                                    router_probs=encoder_outputs.encoder_router_logits)
+        for token_id in range(max_new_tokens):
+            for i in range(num_minibatch):
+                select_index = batch_index[i]
+                # Create encoder outputs
+                outputs = MoEModelOutput(last_hidden_state=encoder_outputs.encoder_last_hidden_state[select_index],
+                                        hidden_states=encoder_outputs.encoder_hidden_states,
+                                        attentions=encoder_outputs.encoder_attentions,
+                                        router_probs=encoder_outputs.encoder_router_logits)
 
-            pattern = decode_pattern[select_index].sum(0)[1]
-            key_values = batch_key_value[i]
-            mask = attention_mask[select_index]
-            decoder_input_ids = decode_id[select_index]
+                pattern = decode_pattern[select_index].sum(0)[token_id]
+                key_values = batch_key_value[i]
+                mask = attention_mask[select_index]
+                decoder_input_ids = decode_id[select_index, token_id]
+                decoder_input_ids = torch.unsqueeze(decoder_input_ids, dim=-1).to(torch.long)
+                input = input_ids[select_index]
 
-            torch.cuda.synchronize()
-            start = time.time()
+                torch.cuda.synchronize()
+                start = time.time()
 
-            cache_engine.prefetch(pattern)
+                cache_engine.prefetch(pattern)
 
-            with torch.cuda.stream(compute_stream):
-                outputs = model(input_ids=input_ids,
-                                decoder_input_ids=decoder_input_ids,
-                                attention_mask=mask,
-                                past_key_values=key_values,
-                                encoder_outputs=outputs,
-                                output_router_logits=True,
-                                use_cache=True)
+                with torch.cuda.stream(compute_stream):
+                    outputs = model(input_ids=input,
+                                    decoder_input_ids=decoder_input_ids,
+                                    attention_mask=mask,
+                                    past_key_values=key_values,
+                                    encoder_outputs=outputs,
+                                    output_router_logits=True,
+                                    use_cache=True)
+                
+                torch.cuda.synchronize()
+                duration += time.time() - start
+
+                batch_key_value[i] = outputs.past_key_values
             
-            torch.cuda.synchronize()
-            duration += time.time() - start
+            # Collect the key value cache 
+            merge_key_value = key_value_select_merge(batch_key_value, batch_index)
+
+            # reschedule
+            batch_index = scheduler(decode_pattern[:, token_id+1].float().cuda(), cache_size, batch_size, 30)
+
+            batch_key_value = key_value_select_batch(merge_key_value, batch_index)
 
     end_event.record()
     torch.cuda.synchronize()
@@ -306,19 +361,14 @@ def decode_in_select_batch(model,
     print(f"Elapsed time: {elapsed_time_ms} ms")
 
 if __name__ == "__main__":
-    # n = 128  # 数据点的数量
-    # L = 6
-    # E = 32
-    # k = 4    # 簇的数量
-    # data = [torch.randint(0, 2, (L, E)).cuda().float() for _ in range(n)]
-
-    # indices_within_cluster = scheduler(data, 30, k)
-    # balanced_cluster_indices = postprocess_clusters(indices_within_cluster, n, k)
-    # for i, cluster in enumerate(balanced_cluster_indices):
-    #     print(f"Balanced Cluster {i} ({len(cluster)}): {cluster}")
-
-
     init_env()
+
+    in_order = False
+    cache_size = 8
+    batch_size = 32
+    total_batch_size = 128
+    total_batch_id = 0
+    max_new_tokens = 7
 
     rank = torch.distributed.get_rank()
     device = f"cuda:{rank}" if torch.cuda.is_available() else 'cpu'
@@ -329,25 +379,26 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
 
-    input_data, decode_id, batch_pattern, token_pattern = load_encoder(dataset, tokenizer, 128, 0)
+    input_data, decode_id, batch_pattern, token_pattern = load_encoder(dataset, tokenizer, total_batch_size, total_batch_id)
     
     input_ids = input_data.input_ids.to(device)
     attention_mask = input_data.attention_mask.to(device)
     decoder_input_ids = decode_id.int().to(device)
     batch_pattern = batch_pattern.to(device)
 
-    offload_model, cache_engine = build_offload_switch(offload_per_layer=16, state_path=state_path, is_baseline=False, is_profile=True)
+    offload_model, cache_engine = build_offload_switch(offload_per_layer=16, state_path=state_path, model_name="google/switch-base-32", is_baseline=False, is_profile=True)
     offload_model = offload_model.bfloat16().to(device)
 
     pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
     cache_engine.prefetch(pattern)
 
     print("Token pattern shape ", token_pattern.shape)
+    print("Shape of batch pattern ", batch_pattern.shape)
+    print("input id shape ", input_ids.shape)
 
-    indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), 8, 32, 30)
     # balanced_cluster_indices = postprocess_clusters(indices_within_cluster, 128, 4)
 
-    # Prefilling
+    # Prefilling stage
     outputs = offload_model(input_ids=input_ids,
                             decoder_input_ids=decoder_input_ids,
                             attention_mask=attention_mask,
@@ -356,21 +407,23 @@ if __name__ == "__main__":
                             output_router_logits=True,
                             use_cache=True)
     
-    print("Last hidden state shape ", outputs.encoder_last_hidden_state.shape)
-    print("Past key value shape ", len(outputs.past_key_values))
-    print("Type ", type(outputs.past_key_values))
-    print("Key shape ", len(outputs.past_key_values[0]))
-    print("Type ", type(outputs.past_key_values[0]))
-    print("Shape ", outputs.past_key_values[0][0].shape)
+    if in_order:
+        batch_key_value = key_value_in_order(outputs.past_key_values, batch_size)
 
-    # batch_key_value = key_value_in_order(outputs.past_key_values, 32)
+        torch.cuda.cudart().cudaProfilerStart()
+        decode_in_order(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, 4)
+        torch.cuda.cudart().cudaProfilerStop()
+    else:
+        indices_within_cluster = scheduler(token_pattern[:, 1].float().to(device), cache_size, batch_size, 30)
+        print("Origin KV cache size ", outputs.past_key_values[0][0].shape)
+        print("Origin probelm size ", outputs.past_key_values[0][2].shape)
+        batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
+        print("After schedule KV cache size ", batch_key_value[0][0][0].shape)
+        print("After scheduleproblem size ", batch_key_value[0][0][2].shape)
+        decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, cache_size, batch_size, indices_within_cluster)
+
+    # batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
 
     # torch.cuda.cudart().cudaProfilerStart()
-    # decode_in_order(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, 4)
+    # decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, indices_within_cluster)
     # torch.cuda.cudart().cudaProfilerStop()
-
-    batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
-
-    torch.cuda.cudart().cudaProfilerStart()
-    decode_in_select_batch(offload_model, cache_engine, outputs, decoder_input_ids, token_pattern, attention_mask, batch_key_value, indices_within_cluster)
-    torch.cuda.cudart().cudaProfilerStop()
