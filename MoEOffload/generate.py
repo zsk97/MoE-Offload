@@ -46,7 +46,7 @@ def fix_decode_generate(input_ids,
     decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
     encoder_outputs = None
 
-    print(f"Start inference")
+    # print(f"Start inference")
     model.eval()  # Put model in evaluation mode
     predictor.eval()
     with torch.no_grad():  # Disable gradient calculation
@@ -72,7 +72,7 @@ def fix_decode_generate(input_ids,
                                 output_router_logits=True,
                                 use_cache=True)  # use_cache允许模型返回past_key_values
             torch.cuda.nvtx.range_pop()
-            print(f"Step{step}: encoder-{outputs.encoder_router_logits[1][0].shape} decoder-{outputs.decoder_router_logits[1][0].shape}")
+            # print(f"Step{step}: encoder-{outputs.encoder_router_logits[1][0].shape} decoder-{outputs.decoder_router_logits[1][0].shape}")
             
             # Select the next token based on the decode_id
             next_token = decode_ids[:, step]

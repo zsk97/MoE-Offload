@@ -19,6 +19,7 @@ import json
 import os
 import typing as tp
 import torch
+import logging
 
 MODEL_STATE_DICT = None
 
@@ -235,14 +236,26 @@ def build_offload_switch(
                 del expert_wrapper
                 torch.cuda.synchronize(device)
                 torch.cuda.empty_cache()
+
     if MODEL_STATE_DICT is not None:
+        assert len(global_state_cache) == 0
         non_expert_dict = {}
         for key, val in MODEL_STATE_DICT.items():
             if 'expert' not in key:
                 non_expert_dict[key] = val
         model.load_state_dict(non_expert_dict, True)
 
+    if len(global_state_cache) != 0:
+        assert MODEL_STATE_DICT is None
+        non_expert_dict = {}
+        for _, state_dict in global_state_cache.items():
+            for key, value in state_dict.items():
+                if 'expert' not in key:
+                    non_expert_dict[key] = value
+        model.load_state_dict(non_expert_dict, True)
+
     if is_profile:
+        logging.info("Add model hooking for profiling")
         for module in model.modules():
             module.register_forward_pre_hook(forward_pre_hook)
             module.register_forward_hook(forward_post_hook)
