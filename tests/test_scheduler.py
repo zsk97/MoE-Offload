@@ -111,6 +111,7 @@ def scheduler(pattern_list, cache_size, batch_size, num_epochs=30, is_balanced=T
     data_similarity = sim_func(pattern_list)
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
+    # print("Output index length ", len(indices_within_cluster))
 
     on_demand_expert_schedule = []
     for i, cluster in enumerate(indices_within_cluster):
@@ -201,12 +202,13 @@ def key_value_select_merge(key_value_list, batch_idx):
         for j in range(4):
             if j < 2:  
                 kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_self), dtype=kv_type, device=device)
-                print("KV tensor shape ", kv_tensor.shape)
+                # print("KV tensor shape ", kv_tensor.shape)
             else:
                 kv_tensor = torch.zeros((num_batch * batch_size, *kv_shape_cross), dtype=kv_type, device=device)
-                print("KV tensor shape ", kv_tensor.shape)
+                # print("KV tensor shape ", kv_tensor.shape)
             for batch_id in range(num_batch):
-                print("Fill tensor shape ", key_value_list[batch_id][i][j].shape)
+                # print(f"Batch {batch_id} Layer {i} pos {j}")
+                # print("Fill tensor shape ", key_value_list[batch_id][i][j].shape)
                 kv_tensor[batch_idx[batch_id], ...] = key_value_list[batch_id][i][j]
             kv_lists.append(kv_tensor)
         
@@ -325,9 +327,13 @@ def decode_in_select_batch(model,
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
 
             # reschedule
+            # print("pattern list ", decode_pattern[:, token_id+1].shape)
             batch_index, _ = scheduler(decode_pattern[:, token_id+1].float().cuda(), cache_size, batch_size, 30)
-
+            # print("Batch ", i)
+            # print("batch index length ", len(batch_index))
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
+
+            # print("batch key value length ", len(batch_key_value))
 
     end_event.record()
     torch.cuda.synchronize()
@@ -395,6 +401,6 @@ if __name__ == "__main__":
         batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
         print("After schedule KV cache size ", batch_key_value[0][0][0].shape)
         print("After scheduleproblem size ", batch_key_value[0][0][2].shape)
-        decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, cache_size, batch_size, indices_within_cluster)
+        decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, batch_size, cache_size, indices_within_cluster)
 
 
