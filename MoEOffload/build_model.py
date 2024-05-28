@@ -53,6 +53,8 @@ pretrained_switch_weights_map = {
     },
 }
 
+global_state_cache = {}
+
 @dataclass(frozen=True)
 class OffloadConfig:
     main_size: int
@@ -106,7 +108,12 @@ def make_and_load_expert_wrapper(
                 state_fpaths = [weight_map[f"{module_idx}.w{i}.weight"] for i in ['i', 'o']]
                 state_fpaths = list(set(state_fpaths))
             for state_fpath in state_fpaths:
-                state_dict = weight_load_func(os.path.join(states_dir, state_fpath), device)
+                if state_fpath not in global_state_cache:
+                    state_dict = weight_load_func(os.path.join(states_dir, state_fpath), device)
+                    global_state_cache[state_fpath] = state_dict
+                else:
+                    # Retrieve the state dictionary from the global cache
+                    state_dict = global_state_cache[state_fpath]
                 expert = make_empty_expert(config).bfloat16()
                 for idx in ['i', 'o']:
                     layer = getattr(expert, f"w{idx}")
@@ -134,7 +141,7 @@ def build_offload_switch(
     offload_per_layer: int=16,
     buffer_size:int = 6,
     state_path: str='/home/nus-hx/.cache/huggingface/hub/models--google--switch-base-16/snapshots/0ef7d88ed50ec5f2cfdc019e81cef04d19700f8f',
-    model_name="google/switch-base-32",
+    model_name="google/switch-base-64",
     device = torch.device("cuda:0"),
     config=None,
     is_baseline=False,

@@ -1,12 +1,9 @@
 import torch
 import logging
 
-def process_dataset(dataset, tokenizer, batch_size, top_n=0):
+def process_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
     len_dataset = len(dataset['train'])
     num_batch = len_dataset // batch_size
-    num_moe_layer = 6
-    num_expert = 32
-    num_layer = 24
     num_encoder_layer = 12
 
     if top_n == 0:
