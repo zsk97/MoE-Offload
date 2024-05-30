@@ -358,7 +358,7 @@ def decode_in_select_batch(model,
 if __name__ == "__main__":
     init_env()
 
-    in_order = False
+    in_order = True
     cache_size = 8
     batch_size = 32
     total_batch_size = 128

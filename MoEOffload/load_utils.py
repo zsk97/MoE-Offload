@@ -100,6 +100,9 @@ def process_schedule_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0
         decode_pattern = decode_pattern.permute((0, 2, 1))
         predict_pattern = torch.Tensor(predict_pattern).long() # (bs, seq_len, num_layer, top3_indices)
         
+        print("********* Pattern ***********")
+        print(predict_pattern)
+
         pattern = None
         # Switch Transformer use MoE in non-adjacent layer
         # Currently, we only have pattern for decoder
@@ -126,7 +129,7 @@ def process_schedule_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0
             indices = list(range(1, num_encoder_layer, 2))
             token_decode_pattern[:, :, indices, :] = token_predict_pattern
             pattern = torch.cat((token_encode_pattern, token_decode_pattern), dim=2)
-        
+    
         yield input_data, decode_id, pattern
     
 

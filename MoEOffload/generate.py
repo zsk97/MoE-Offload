@@ -163,8 +163,11 @@ def schedule_generate(input_ids,
     encoder_last_hidden = torch.cat(encoder_last_hidden)
     encoder_key_value = key_value_order_merge(encoder_key_value)
     
+    print("Predict pattern ")
+    print(predict_pattern[:, 1].float())
+
     # Schedule the first partition
-    batch_index, _ = scheduler(predict_pattern[:, 0].float(), cache_size, batch_size, 30)
+    batch_index, _ = scheduler(predict_pattern[:, 1].float(), cache_size, batch_size, 30, verbose=True)
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
@@ -213,7 +216,7 @@ def schedule_generate(input_ids,
 
             # Transform KV format and do batch schedule
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
-            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30)
+            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30, verbose=True)
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
     
