@@ -194,3 +194,21 @@ def key_value_select_merge(key_value_list, batch_idx):
         merge_kv_list.append(tuple(kv_lists))
 
     return tuple(merge_kv_list)
+
+def key_value_order_merge(key_value_list):
+    num_batch = len(key_value_list)
+    num_layer = len(key_value_list[0])
+
+    merge_kv_list = []
+    kv_tensor = None
+    for i in range(num_layer):
+        kv_lists = []
+        for j in range(4):
+            kv_tensor = []
+            for batch_id in range(num_batch):
+                kv_tensor.append(key_value_list[batch_id][i][j])
+            kv_lists.append(torch.cat(kv_tensor))
+        
+        merge_kv_list.append(tuple(kv_lists))
+
+    return tuple(merge_kv_list)

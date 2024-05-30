@@ -8,6 +8,7 @@ def parse_args():
     parser.add_argument('--model_path', type=str, help='Model state path')
     parser.add_argument('--batch_size', type=int, help="Batch size for inference", default=8)
     parser.add_argument('--offload_size', type=int, help="Number of offload experts in each layer", default=8)
+    parser.add_argument('--schedule_size', type=int, help="The total batch size for scheduling", default=128)
     parser.add_argument('--max_new_tokens', type=int, help="Maximum number of new generation tokens", default=8)
     parser.add_argument('--top_n', type=int, help='Select top n output as predict pattern', default=0)
     parser.add_argument('--num_batches', type=int, help='Run num batches data', default=8)

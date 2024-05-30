@@ -324,15 +324,29 @@ def decode_in_select_batch(model,
                 batch_key_value[i] = outputs.past_key_values
             
             # Collect the key value cache 
+            torch.cuda.synchronize()
+            start = time.time()
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
+            torch.cuda.synchronize()
+            end = time.time()
 
+            print("KV merge time ", end - start)
             # reschedule
             # print("pattern list ", decode_pattern[:, token_id+1].shape)
-            batch_index, _ = scheduler(decode_pattern[:, token_id+1].float().cuda(), cache_size, batch_size, 30)
-            # print("Batch ", i)
+            torch.cuda.synchronize()
+            start = time.time()
+            batch_index, _ = scheduler(decode_pattern[:, token_id+1].float(), cache_size, batch_size, 30)
+            torch.cuda.synchronize()
+            end = time.time()
+            print("Schedule time ", end - start)
             # print("batch index length ", len(batch_index))
-            batch_key_value = key_value_select_batch(merge_key_value, batch_index)
 
+            torch.cuda.synchronize()
+            start = time.time()
+            batch_key_value = key_value_select_batch(merge_key_value, batch_index)
+            torch.cuda.synchronize()
+            end = time.time()
+            print("KV select time ", end - start)
             # print("batch key value length ", len(batch_key_value))
 
     end_event.record()
@@ -348,7 +362,7 @@ if __name__ == "__main__":
     cache_size = 8
     batch_size = 32
     total_batch_size = 128
-    total_batch_id = 0
+    total_batch_id = 1
     max_new_tokens = 7
 
     rank = torch.distributed.get_rank()
@@ -401,6 +415,6 @@ if __name__ == "__main__":
         batch_key_value = key_value_select_batch(outputs.past_key_values, indices_within_cluster)
         print("After schedule KV cache size ", batch_key_value[0][0][0].shape)
         print("After scheduleproblem size ", batch_key_value[0][0][2].shape)
-        decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern, attention_mask, batch_key_value, max_new_tokens, batch_size, cache_size, indices_within_cluster)
+        decode_in_select_batch(offload_model, cache_engine, outputs, input_ids, decoder_input_ids, token_pattern.cuda(), attention_mask, batch_key_value, max_new_tokens, batch_size, cache_size, indices_within_cluster)
 
 

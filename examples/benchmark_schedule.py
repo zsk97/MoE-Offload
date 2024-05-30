@@ -17,6 +17,7 @@ def benchmark_schedule(state_path,
                       device, 
                       offload_size,
                       batch_size,
+                      schedule_size,
                       max_new_tokens,
                       top_n,
                       num_batches,
@@ -34,7 +35,7 @@ def benchmark_schedule(state_path,
         exit(0)
 
     model_name = "google/" + match.group(0)
-    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline)
+    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
     dataset = load_dataset("marsggbo/bigbench4switch64_patternand_pattern_predictor_gen")
@@ -43,7 +44,7 @@ def benchmark_schedule(state_path,
     compute_stream = torch.cuda.Stream()
     predict_stream = torch.cuda.Stream()
 
-    assert num_batches < len(dataset['train']) // batch_size
+    assert num_batches < len(dataset['train']) // schedule_size
 
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
@@ -62,7 +63,7 @@ def benchmark_schedule(state_path,
     forward_time = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    for input_data, decode_id, pattern in process_schedule_dataset(dataset, tokenizer, batch_size, num_experts_per_layer, top_n):
+    for input_data, decode_id, pattern in process_schedule_dataset(dataset, tokenizer, schedule_size, num_experts_per_layer, top_n):
         torch.cuda.nvtx.range_push(f"Batch {batch}")
         if batch == 1:
             start_event.record()
@@ -81,6 +82,7 @@ def benchmark_schedule(state_path,
                                         cache_engine, 
                                         cache_size=num_experts_per_layer - offload_size,
                                         batch_size=batch_size,
+                                        schedule_size=schedule_size,
                                         is_baseline=is_baseline, 
                                         is_predict=is_predict, 
                                         compute_stream=compute_stream, 
@@ -126,6 +128,7 @@ if __name__ == "__main__":
                       device,
                       args.offload_size,
                       args.batch_size,
+                      args.schedule_size,
                       args.max_new_tokens,
                       args.top_n,
                       args.num_batches,

@@ -40,9 +40,9 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 64 96 112
+        for offload_size in 64 112
         do
-            for batch_size in 8 16 32 64 128
+            for batch_size in 4 256
             do
             python examples/benchmark_offload.py --model_path=/home/scratch.shunkangz_gpu/Research/NUS_Project/Checkpoint/models--google--switch-base-128/snapshots/86c815ec05361a33a8b49fc717277da9c0a4e711 \
                                                 --offload_size=$offload_size \

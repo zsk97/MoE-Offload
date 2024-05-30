@@ -1,7 +1,7 @@
 import torch
 import time
 import concurrent.futures
-from MoEOffload.scheduler import scheduler, key_value_select_batch, key_value_select_merge
+from MoEOffload.scheduler import scheduler, key_value_select_batch, key_value_select_merge, key_value_order_merge
 from transformers.modeling_outputs import MoEModelOutput
 
 num_tasks = 1
@@ -115,6 +115,7 @@ def schedule_generate(input_ids,
                     cache_engine,
                     cache_size,
                     batch_size,
+                    schedule_size,
                     max_new_tokens=128,
                     past_key_values=None,
                     compute_stream=None,
@@ -127,32 +128,54 @@ def schedule_generate(input_ids,
     decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
     encoder_outputs = None
 
-    pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
-    cache_engine.prefetch(pattern)
+    num_minibatch = schedule_size // batch_size
 
-    # Prefilling stage
-    with torch.cuda.stream(compute_stream):
-        outputs = model(input_ids=input_ids,
-                        decoder_input_ids=decoder_input_ids,
-                        attention_mask=attention_mask,
-                        past_key_values=past_key_values,
-                        encoder_outputs=encoder_outputs,
-                        output_router_logits=True,
-                        use_cache=True)
+    pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
+
+    encoder_last_hidden = []
+    encoder_key_value = []
+
+    duration = 0
+
+    start = time.time()
+    # Prefilling stage for num_minibatch
+    for batch_id in range(num_minibatch):
+        torch.cuda.nvtx.range_push(f"Prefilling Batch {batch_id}")
+        cache_engine.prefetch(pattern)
+
+        with torch.cuda.stream(compute_stream):
+            outputs = model(input_ids=input_ids,
+                            decoder_input_ids=decoder_input_ids,
+                            attention_mask=attention_mask,
+                            past_key_values=past_key_values,
+                            encoder_outputs=encoder_outputs,
+                            output_router_logits=True,
+                            use_cache=True)
+        torch.cuda.nvtx.range_pop()
+
+        encoder_last_hidden.append(outputs.encoder_last_hidden_state)
+        encoder_key_value.append(outputs.past_key_values)
+    
+    torch.cuda.synchronize()
+    duration += time.time() - start
+
+    # Merge the output results from different minibatch
+    encoder_last_hidden = torch.cat(encoder_last_hidden)
+    encoder_key_value = key_value_order_merge(encoder_key_value)
     
     # Schedule the first partition
     batch_index, _ = scheduler(predict_pattern[:, 0].float(), cache_size, batch_size, 30)
-    batch_key_value = key_value_select_batch(outputs.past_key_values, batch_index)
-    num_minibatch = len(batch_index)
+    batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
-    duration = 0
     with torch.no_grad():
         for token_id in range(max_new_tokens):
+            torch.cuda.nvtx.range_push(f"Step {token_id}")
             for i in range(num_minibatch):
+                torch.cuda.nvtx.range_push(f"Batch {i}")
                 select_index = batch_index[i]
 
-                encoder_outputs = MoEModelOutput(last_hidden_state=outputs.encoder_last_hidden_state[select_index],
+                encoder_outputs = MoEModelOutput(last_hidden_state=encoder_last_hidden[select_index],
                                                 hidden_states=outputs.encoder_hidden_states,
                                                 attentions=outputs.encoder_attentions,
                                                 router_probs=outputs.encoder_router_logits)
@@ -167,8 +190,11 @@ def schedule_generate(input_ids,
                 torch.cuda.synchronize()
                 start = time.time()
 
+                torch.cuda.nvtx.range_push(f"Prefetch")
                 cache_engine.prefetch(pattern)
+                torch.cuda.nvtx.range_pop()
 
+                torch.cuda.nvtx.range_push(f"Compute")
                 with torch.cuda.stream(compute_stream):
                     outputs = model(input_ids=input,
                                     decoder_input_ids=decoder_input_ids,
@@ -179,13 +205,16 @@ def schedule_generate(input_ids,
                                     use_cache=True)
                 
                 torch.cuda.synchronize()
+                torch.cuda.nvtx.range_pop()
                 duration += time.time() - start
+                torch.cuda.nvtx.range_pop()
 
                 batch_key_value[i] = outputs.past_key_values
 
-                # Transform KV format and do batch schedule
-                merge_key_value = key_value_select_merge(batch_key_value, batch_index)
-                batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30)
-                batch_key_value = key_value_select_batch(merge_key_value, batch_index)
+            # Transform KV format and do batch schedule
+            merge_key_value = key_value_select_merge(batch_key_value, batch_index)
+            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30)
+            batch_key_value = key_value_select_batch(merge_key_value, batch_index)
+            torch.cuda.nvtx.range_pop()
     
     return duration
