@@ -125,7 +125,7 @@ def schedule_generate(input_ids,
                     device=torch.device("cuda:0")):
     model.eval()
 
-    decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
+    decoder_input_ids = torch.tensor([[0]]*batch_size).long().to(device)
     encoder_outputs = None
 
     num_minibatch = schedule_size // batch_size
@@ -144,9 +144,9 @@ def schedule_generate(input_ids,
         cache_engine.prefetch(pattern)
 
         with torch.cuda.stream(compute_stream):
-            outputs = model(input_ids=input_ids,
+            outputs = model(input_ids=input_ids[batch_id*batch_size:(batch_id+1)*batch_size],
                             decoder_input_ids=decoder_input_ids,
-                            attention_mask=attention_mask,
+                            attention_mask=attention_mask[batch_id*batch_size:(batch_id+1)*batch_size],
                             past_key_values=past_key_values,
                             encoder_outputs=encoder_outputs,
                             output_router_logits=True,
@@ -169,7 +169,7 @@ def schedule_generate(input_ids,
 
     # Decode stage
     with torch.no_grad():
-        for token_id in range(max_new_tokens):
+        for token_id in range(1, max_new_tokens):
             torch.cuda.nvtx.range_push(f"Step {token_id}")
             for i in range(num_minibatch):
                 torch.cuda.nvtx.range_push(f"Batch {i}")

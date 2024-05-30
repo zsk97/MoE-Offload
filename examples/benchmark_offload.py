@@ -34,7 +34,7 @@ def benchmark_offload(state_path,
         exit(0)
 
     model_name = "google/" + match.group(0)
-    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline)
+    offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
     dataset = load_dataset("marsggbo/bigbench4switch64_patternand_pattern_predictor_gen")
