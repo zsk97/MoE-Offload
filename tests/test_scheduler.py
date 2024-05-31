@@ -370,7 +370,7 @@ if __name__ == "__main__":
 
     state_path = "/home/scratch.shunkangz_gpu/Research/NUS_Project/Checkpoint/models--google--switch-base-32/snapshots/2018338b8dad760fa7a35a754d532486ef3942f9"
 
-    dataset = load_dataset("marsggbo/bigbench4switch32_pattern_predictor_tmp")
+    dataset = load_dataset("marsggbo/bigbench4switch64_patternand_pattern_predictor_gen")
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
 

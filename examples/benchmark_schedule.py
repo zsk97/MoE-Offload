@@ -38,7 +38,8 @@ def benchmark_schedule(state_path,
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
-    dataset = load_dataset("marsggbo/bigbench4switch64_patternand_pattern_predictor_gen")
+    dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")
+    dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()

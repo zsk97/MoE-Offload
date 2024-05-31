@@ -54,6 +54,7 @@ def fix_decode_generate(input_ids,
     with torch.no_grad():  # Disable gradient calculation
         for step in range(1, max_new_tokens):
             torch.cuda.nvtx.range_push(f"Step {step}")
+            torch.cuda.synchronize()
             if not is_baseline:
                 torch.cuda.nvtx.range_push(f"Prefetch")
                 cache_engine.prefetch(pattern)
@@ -63,7 +64,7 @@ def fix_decode_generate(input_ids,
                 futures = [executor.submit(launch_predict, predictor, input_ids, 
                                                     decoder_input_ids, attention_mask, 
                                                     past, encoder_outputs, predict_stream)]
-    
+
             torch.cuda.nvtx.range_push(f"Compute")
             with torch.cuda.stream(compute_stream):
                 outputs = model(input_ids=input_ids,
@@ -74,6 +75,7 @@ def fix_decode_generate(input_ids,
                                 output_router_logits=True,
                                 use_cache=True)  # use_cache允许模型返回past_key_values
             torch.cuda.nvtx.range_pop()
+            torch.cuda.synchronize()
             # print(f"Step{step}: encoder-{outputs.encoder_router_logits[1][0].shape} decoder-{outputs.decoder_router_logits[1][0].shape}")
             
             # Select the next token based on the decode_id
@@ -162,12 +164,9 @@ def schedule_generate(input_ids,
     # Merge the output results from different minibatch
     encoder_last_hidden = torch.cat(encoder_last_hidden)
     encoder_key_value = key_value_order_merge(encoder_key_value)
-    
-    print("Predict pattern ")
-    print(predict_pattern[:, 1].float())
 
     # Schedule the first partition
-    batch_index, _ = scheduler(predict_pattern[:, 1].float(), cache_size, batch_size, 30, verbose=True)
+    batch_index, _ = scheduler(predict_pattern[:, 1].float(), cache_size, batch_size, 30, verbose=False)
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
@@ -216,7 +215,7 @@ def schedule_generate(input_ids,
 
             # Transform KV format and do batch schedule
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
-            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30, verbose=True)
+            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30, verbose=False)
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
     
