@@ -28,7 +28,7 @@ def process_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
         # Padding prompts
         input_data = tokenizer(prompts, return_tensors="pt", padding=True, return_attention_mask=True)
 
-        decode_id = torch.Tensor(decode_id)
+        decode_id = torch.Tensor(decode_id).long()
         decode_length = decode_id.shape[-1]
 
         # Deal with pattner

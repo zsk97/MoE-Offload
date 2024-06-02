@@ -5,13 +5,13 @@ import logging
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import concurrent.futures
-from accessory.util import misc
 import fairscale.nn.model_parallel.initialize as fs_init
 
 from MoEOffload.load_utils import process_dataset
 from MoEOffload.generate import fix_decode_generate
 from MoEOffload.build_model import build_offload_switch
 from MoEOffload.args import parse_args
+from MoEOffload.utils import init_distributed_mode
 
 def benchmark_offload(state_path, 
                       device, 
@@ -98,11 +98,14 @@ def benchmark_offload(state_path,
 
 def init_env():
     # define the model
-    misc.init_distributed_mode()
+    init_distributed_mode()
     fs_init.initialize_model_parallel(torch.distributed.get_world_size())
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.ipdb:
+        from ipdb import set_trace
+        set_trace()
     
     torch.manual_seed(1234)
 
