@@ -25,7 +25,7 @@ def benchmark_schedule(state_path,
                       is_profile=False,
                       is_predict=False):
 
-    pattern = r'switch-base-(16|64|128)'
+    pattern = r'switch-base-(16|32|64|128)'
     match = re.search(pattern, state_path)
     if match:
         # Output the captured number
@@ -136,3 +136,5 @@ if __name__ == "__main__":
                       args.is_baseline,
                       args.is_profile,
                       args.is_predict)
+
+# python -m ipdb examples/benchmark_schedule.py --model_path /home/nus-hx/.cache/huggingface/hub/models--google--switch-base-32/snapshots/2018338b8dad760fa7a35a754d532486ef3942f9 --batch_size 64 --offload_size 24

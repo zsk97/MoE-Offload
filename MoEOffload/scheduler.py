@@ -1,5 +1,7 @@
 import torch
 import time
+import tree
+from functools import partial
 
 def initialize_indices(n, k):
     """随机初始化质心的索引"""
@@ -144,6 +146,7 @@ def key_value_in_order(key_values, batch_size):
     return final_results
 
 def key_value_select_batch(key_values, batch_idx):
+    return key_value_select_batch2(key_values, batch_idx)
     key_values_list = []
 
     num_layer = len(key_values)
@@ -164,6 +167,19 @@ def key_value_select_batch(key_values, batch_idx):
         final_results.append(tuple(elements))
 
     return final_results
+
+def key_value_select_batch2(key_values, batch_idx):
+    # 定义一个函数来选择特定的批次索引
+    def select_batch(tensor, idx):
+        return tensor[batch_idx[idx]]
+    num_batches = len(batch_idx)
+    funcs = [partial(select_batch, idx=i) for i in range(num_batches)]
+
+    # 使用map_structure应用select_batch到每个tensor
+    selected_key_values = [
+        tree.map_structure(func, key_values) for func in funcs]
+
+    return selected_key_values
 
 def key_value_select_merge(key_value_list, batch_idx):
     num_batch = len(key_value_list)
@@ -196,6 +212,7 @@ def key_value_select_merge(key_value_list, batch_idx):
     return tuple(merge_kv_list)
 
 def key_value_order_merge(key_value_list):
+    return key_value_order_merge2(key_value_list)
     num_batch = len(key_value_list)
     num_layer = len(key_value_list[0])
 
@@ -212,3 +229,29 @@ def key_value_order_merge(key_value_list):
         merge_kv_list.append(tuple(kv_lists))
 
     return tuple(merge_kv_list)
+
+def key_value_order_merge2(key_value_list):
+    # 定义一个合并tensor的函数
+    def concat_tensors(*tensors):
+        return torch.cat(tensors, dim=0)
+
+    # 使用map_structure将concat_tensors函数应用于整个结构
+    # 传入解构后的key_value_tuple，每个位置的tensor将自动传给concat_tensors
+    merged_result = tree.map_structure(concat_tensors, *key_value_list)
+
+    # 由于map_structure返回的结果结构与输入结构相同，我们可以直接返回结果
+    return merged_result
+
+def pad_cross_attention_kv(past_key_values: tuple, sub_max_length: int, max_length: int, cross_kv_indices: list):
+    past_key_values_flatten = tree.flatten(past_key_values)
+    for idx in cross_kv_indices:
+        past_key_values_flatten[idx] = torch.nn.functional.pad(past_key_values_flatten[idx], (0, 0, max_length - sub_max_length, 0))
+    past_key_values = tree.unflatten_as(past_key_values, past_key_values_flatten)
+    return past_key_values
+
+def slice_cross_attention_kv(past_key_values: tuple, sub_max_length: int, cross_kv_indices: list):
+    past_key_values_flatten = tree.flatten(past_key_values)
+    for idx in cross_kv_indices:
+        past_key_values_flatten[idx] = past_key_values_flatten[idx][:, :, -1*sub_max_length:] # (batch_size, num_heads, seq_len, head_dim)
+    past_key_values = tree.unflatten_as(past_key_values, past_key_values_flatten)
+    return past_key_values
