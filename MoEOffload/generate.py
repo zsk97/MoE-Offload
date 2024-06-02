@@ -49,6 +49,8 @@ def fix_decode_generate(input_ids,
     pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
     decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
     encoder_outputs = None
+    
+    duration = 0
 
     # print(f"Start inference")
     model.eval()  # Put model in evaluation mode
@@ -57,6 +59,8 @@ def fix_decode_generate(input_ids,
         for step in range(1, max_new_tokens):
             torch.cuda.nvtx.range_push(f"Step {step}")
             torch.cuda.synchronize()
+            if step > 1:
+                start = time.time()
             if not is_baseline:
                 torch.cuda.nvtx.range_push(f"Prefetch")
                 cache_engine.prefetch(pattern)
@@ -78,6 +82,9 @@ def fix_decode_generate(input_ids,
                                 use_cache=True)  # use_cache允许模型返回past_key_values
             torch.cuda.nvtx.range_pop()
             torch.cuda.synchronize()
+
+            if step > 1:
+                duration += time.time() - start
             # print(f"Step{step}: encoder-{outputs.encoder_router_logits[1][0].shape} decoder-{outputs.decoder_router_logits[1][0].shape}")
             
             # Select the next token based on the decode_id
@@ -108,6 +115,8 @@ def fix_decode_generate(input_ids,
                 # Wait for all tasks to complete
                 concurrent.futures.wait(futures)
             torch.cuda.nvtx.range_pop()
+    
+    return duration
 
 def schedule_generate(input_ids,
                     decode_ids,
@@ -179,6 +188,8 @@ def schedule_generate(input_ids,
     
     torch.cuda.synchronize()
     duration += time.time() - start
+
+    duration = 0
 
     # Merge the output results from different minibatch
     encoder_last_hidden = torch.cat(encoder_last_hidden)

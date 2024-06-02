@@ -62,6 +62,7 @@ def benchmark_offload(state_path,
     if is_profile:
         torch.cuda.cudart().cudaProfilerStart()
     batch = 0
+    forward_time = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
     for input_data, decode_id, pattern in process_dataset(dataset, tokenizer, batch_size, num_experts_per_layer, top_n):
@@ -73,8 +74,8 @@ def benchmark_offload(state_path,
         decode_input_id = decode_id.to(device)
         predict_pattern = pattern.to(device)
 
-        fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, executor, cache_engine, 
-                            is_baseline=is_baseline, is_predict=is_predict, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
+        forward_time += fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, executor, cache_engine, 
+                                            is_baseline=is_baseline, is_predict=is_predict, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
 
         batch += 1
         torch.cuda.nvtx.range_pop()
@@ -93,7 +94,7 @@ def benchmark_offload(state_path,
     # Calculate the elapsed time in milliseconds
     elapsed_time_ms = start_event.elapsed_time(end_event)
     print(f"Elapsed time: {elapsed_time_ms} ms")
-    return
+    print(f"Forward computation time: {forward_time*1000} ms")
 
 def init_env():
     # define the model
