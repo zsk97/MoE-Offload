@@ -19,6 +19,7 @@ import json
 import os
 import typing as tp
 import torch
+import logging
 
 MODEL_STATE_DICT = None
 
@@ -52,6 +53,8 @@ pretrained_switch_weights_map = {
         'index_file': 'model.safetensors.index.json'
     },
 }
+
+global_state_cache = {}
 
 @dataclass(frozen=True)
 class OffloadConfig:
@@ -106,7 +109,12 @@ def make_and_load_expert_wrapper(
                 state_fpaths = [weight_map[f"{module_idx}.w{i}.weight"] for i in ['i', 'o']]
                 state_fpaths = list(set(state_fpaths))
             for state_fpath in state_fpaths:
-                state_dict = weight_load_func(os.path.join(states_dir, state_fpath), device)
+                if state_fpath not in global_state_cache:
+                    state_dict = weight_load_func(os.path.join(states_dir, state_fpath), device)
+                    global_state_cache[state_fpath] = state_dict
+                else:
+                    # Retrieve the state dictionary from the global cache
+                    state_dict = global_state_cache[state_fpath]
                 expert = make_empty_expert(config).bfloat16()
                 for idx in ['i', 'o']:
                     layer = getattr(expert, f"w{idx}")
@@ -134,7 +142,7 @@ def build_offload_switch(
     offload_per_layer: int=16,
     buffer_size:int = 6,
     state_path: str='/home/nus-hx/.cache/huggingface/hub/models--google--switch-base-16/snapshots/0ef7d88ed50ec5f2cfdc019e81cef04d19700f8f',
-    model_name="google/switch-base-32",
+    model_name="google/switch-base-64",
     device = torch.device("cuda:0"),
     config=None,
     is_baseline=False,
@@ -228,14 +236,26 @@ def build_offload_switch(
                 del expert_wrapper
                 torch.cuda.synchronize(device)
                 torch.cuda.empty_cache()
+
     if MODEL_STATE_DICT is not None:
+        assert len(global_state_cache) == 0
         non_expert_dict = {}
         for key, val in MODEL_STATE_DICT.items():
             if 'expert' not in key:
                 non_expert_dict[key] = val
         model.load_state_dict(non_expert_dict, True)
 
+    if len(global_state_cache) != 0:
+        assert MODEL_STATE_DICT is None
+        non_expert_dict = {}
+        for _, state_dict in global_state_cache.items():
+            for key, value in state_dict.items():
+                if 'expert' not in key:
+                    non_expert_dict[key] = value
+        model.load_state_dict(non_expert_dict, True)
+
     if is_profile:
+        logging.info("Add model hooking for profiling")
         for module in model.modules():
             module.register_forward_pre_hook(forward_pre_hook)
             module.register_forward_hook(forward_post_hook)

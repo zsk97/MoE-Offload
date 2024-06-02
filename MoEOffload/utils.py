@@ -151,7 +151,7 @@ def forward_pre_hook(module, input):
     if isinstance(module, SwitchMoeWrapperV1):
         torch.cuda.nvtx.range_push(f"Layer ID {module.layer_id} {module.__class__.__name__}")
     else:
-        torch.cuda.nvtx.range_push(f"Layer ID {module.__class__.__name__}")
+        torch.cuda.nvtx.range_push(f"{module.__class__.__name__}")
 
 def forward_post_hook(module, input, output):
     torch.cuda.nvtx.range_pop()

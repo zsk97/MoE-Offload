@@ -5,18 +5,19 @@ import logging
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import concurrent.futures
+from accessory.util import misc
 import fairscale.nn.model_parallel.initialize as fs_init
 
-from MoEOffload.load_utils import process_dataset
-from MoEOffload.generate import fix_decode_generate
+from MoEOffload.load_utils import process_schedule_dataset
+from MoEOffload.generate import schedule_generate
 from MoEOffload.build_model import build_offload_switch
 from MoEOffload.args import parse_args
-from MoEOffload.utils import init_distributed_mode
 
-def benchmark_offload(state_path, 
+def benchmark_schedule(state_path, 
                       device, 
                       offload_size,
                       batch_size,
+                      schedule_size,
                       max_new_tokens,
                       top_n,
                       num_batches,
@@ -24,7 +25,7 @@ def benchmark_offload(state_path,
                       is_profile=False,
                       is_predict=False):
 
-    pattern = r'switch-base-(16|64|128)'
+    pattern = r'switch-base-(16|32|64|128)'
     match = re.search(pattern, state_path)
     if match:
         # Output the captured number
@@ -37,17 +38,14 @@ def benchmark_offload(state_path,
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
-    dataset_name = f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen"
-    logging.info("Load dataset " + dataset_name)
-    
-    dataset = load_dataset(dataset_name)
+    dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()
     predict_stream = torch.cuda.Stream()
 
-    assert num_batches < len(dataset['train']) // batch_size
+    assert num_batches < len(dataset['train']) // schedule_size
 
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
@@ -61,20 +59,36 @@ def benchmark_offload(state_path,
     
     if is_profile:
         torch.cuda.cudart().cudaProfilerStart()
+
     batch = 0
+    forward_time = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    for input_data, decode_id, pattern in process_dataset(dataset, tokenizer, batch_size, num_experts_per_layer, top_n):
+    for input_data, decode_id, pattern in process_schedule_dataset(dataset, tokenizer, schedule_size, num_experts_per_layer, top_n):
         torch.cuda.nvtx.range_push(f"Batch {batch}")
         if batch == 1:
             start_event.record()
         input_ids = input_data.input_ids.to(device)
         attention_mask = input_data.attention_mask.to(device)
-        decode_input_id = decode_id.to(device)
+        decode_input_id = decode_id.to(device).to(torch.long)
         predict_pattern = pattern.to(device)
 
-        fix_decode_generate(input_ids, decode_input_id, attention_mask, predict_pattern, offload_model, predictor, executor, cache_engine, 
-                            is_baseline=is_baseline, is_predict=is_predict, compute_stream=compute_stream, predict_stream=predict_stream, max_new_tokens=max_new_tokens)
+        forward_time += schedule_generate(input_ids, 
+                                        decode_input_id, 
+                                        attention_mask, 
+                                        predict_pattern, 
+                                        offload_model, 
+                                        predictor, 
+                                        executor, 
+                                        cache_engine, 
+                                        cache_size=num_experts_per_layer - offload_size,
+                                        batch_size=batch_size,
+                                        schedule_size=schedule_size,
+                                        is_baseline=is_baseline, 
+                                        is_predict=is_predict, 
+                                        compute_stream=compute_stream, 
+                                        predict_stream=predict_stream, 
+                                        max_new_tokens=max_new_tokens)
 
         batch += 1
         torch.cuda.nvtx.range_pop()
@@ -93,21 +107,17 @@ def benchmark_offload(state_path,
     # Calculate the elapsed time in milliseconds
     elapsed_time_ms = start_event.elapsed_time(end_event)
     print(f"Elapsed time: {elapsed_time_ms} ms")
+    print(f"Forward computation elapsed time: {forward_time*1000} ms")
     return
 
 def init_env():
     # define the model
-    init_distributed_mode()
+    misc.init_distributed_mode()
     fs_init.initialize_model_parallel(torch.distributed.get_world_size())
 
 if __name__ == "__main__":
     args = parse_args()
-    if args.ipdb:
-        from ipdb import set_trace
-        set_trace()
     
-    torch.manual_seed(1234)
-
     init_env()
 
     rank = torch.distributed.get_rank()
@@ -115,13 +125,16 @@ if __name__ == "__main__":
 
     print(args)
 
-    benchmark_offload(args.model_path,
+    benchmark_schedule(args.model_path,
                       device,
                       args.offload_size,
                       args.batch_size,
+                      args.schedule_size,
                       args.max_new_tokens,
                       args.top_n,
                       args.num_batches,
                       args.is_baseline,
                       args.is_profile,
                       args.is_predict)
+
+# python -m ipdb examples/benchmark_schedule.py --model_path /home/nus-hx/.cache/huggingface/hub/models--google--switch-base-32/snapshots/2018338b8dad760fa7a35a754d532486ef3942f9 --batch_size 64 --offload_size 24
