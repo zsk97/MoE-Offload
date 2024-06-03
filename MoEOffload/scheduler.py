@@ -138,8 +138,17 @@ def scheduler(
         lengths=None,
         origin_batch1_length=None,
         origin_batch2_length=None,
+        in_order=False,
         verbose=False
     ):
+
+    if in_order:
+        num_batch = pattern_list.shape[0] // batch_size
+        batch_index = []
+        for i in range(num_batch):
+            batch_index.append(list(range(i*batch_size, (i+1)*batch_size)))
+        
+        return batch_index, None
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
