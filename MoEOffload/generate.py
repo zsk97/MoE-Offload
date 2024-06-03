@@ -49,6 +49,8 @@ def fix_decode_generate(input_ids,
     pattern = torch.zeros((24, 32), dtype=torch.int).to(device)
     decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
     encoder_outputs = None
+    
+    duration = 0
 
     # print(f"Start inference")
     model.eval()  # Put model in evaluation mode
@@ -57,6 +59,8 @@ def fix_decode_generate(input_ids,
         for step in range(1, max_new_tokens):
             torch.cuda.nvtx.range_push(f"Step {step}")
             torch.cuda.synchronize()
+            if step > 1:
+                start = time.time()
             if not is_baseline:
                 torch.cuda.nvtx.range_push(f"Prefetch")
                 cache_engine.prefetch(pattern)
@@ -78,6 +82,9 @@ def fix_decode_generate(input_ids,
                                 use_cache=True)  # use_cache允许模型返回past_key_values
             torch.cuda.nvtx.range_pop()
             torch.cuda.synchronize()
+
+            if step > 1:
+                duration += time.time() - start
             # print(f"Step{step}: encoder-{outputs.encoder_router_logits[1][0].shape} decoder-{outputs.decoder_router_logits[1][0].shape}")
             
             # Select the next token based on the decode_id
@@ -108,6 +115,8 @@ def fix_decode_generate(input_ids,
                 # Wait for all tasks to complete
                 concurrent.futures.wait(futures)
             torch.cuda.nvtx.range_pop()
+    
+    return duration
 
 def schedule_generate(input_ids,
                     decode_ids,
@@ -143,9 +152,11 @@ def schedule_generate(input_ids,
 
     start = time.time()
     # Prefilling stage for num_minibatch
-    lengths = attention_mask.sum(-1)
+    lengths = attention_mask.sum(-1).cpu()
     max_length = lengths.max()
     num_layers = 12
+    batch1_max_length = lengths[:len(lengths)//2].max().cpu()
+    batch2_max_length = lengths[len(lengths)//2:].max().cpu()
     cross_kv_indices = [i for n in range(num_layers) for i in range(4*n+2, 4*n+4)] # (2,3,6,7,10,11,...,46,47)
     for batch_id in range(num_minibatch):
         torch.cuda.nvtx.range_push(f"Prefilling Batch {batch_id}")
@@ -180,12 +191,20 @@ def schedule_generate(input_ids,
     torch.cuda.synchronize()
     duration += time.time() - start
 
+    duration = 0
+
     # Merge the output results from different minibatch
     encoder_last_hidden = torch.cat(encoder_last_hidden)
     encoder_key_value = key_value_order_merge(encoder_key_value)
 
     # Schedule the first partition
-    batch_index, _ = scheduler(predict_pattern[:, 1].float(), cache_size, batch_size, 30, verbose=False)
+    batch_index, _ = scheduler(
+        predict_pattern[:, 1].float(), cache_size, batch_size, 30,
+        schedule_by_length=True,
+        lengths=lengths,
+        origin_batch1_length=batch1_max_length,
+        origin_batch2_length=batch2_max_length,
+        verbose=False)
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
@@ -242,7 +261,13 @@ def schedule_generate(input_ids,
 
             # Transform KV format and do batch schedule
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
-            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30, verbose=False)
+            batch_index, _ = scheduler(
+                predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30,
+                schedule_by_length=True,
+                lengths=lengths,
+                origin_batch1_length=batch1_max_length,
+                origin_batch2_length=batch2_max_length,
+                verbose=False)
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
     

@@ -94,11 +94,61 @@ def sim_func(pattern_list):
     similarity = 1 - dist / flat_patterns.size(1)
     return similarity
 
-def scheduler(pattern_list, cache_size, batch_size, num_epochs=30, is_balanced=True, verbose=False):
+def swap_elements_by_length(lengths, batch_a, batch_b, origin_max_length_a, origin_max_length_b):
+    if origin_max_length_a == origin_max_length_b:
+        return batch_a, batch_b
+    if isinstance(batch_a, list):
+        batch_a, batch_b = torch.tensor(batch_a), torch.tensor(batch_b)
+    # 确定来自两个批次中较小的最大值的 threshold，并决定交换策略
+    batch_length_a = lengths[batch_a]
+    batch_length_b = lengths[batch_b]
+    max_length = max(origin_max_length_a, origin_max_length_b)
+    batch_a_max = max(batch_length_a)
+    batch_b_max = max(batch_length_b)
+    assert max_length in [batch_a_max, batch_b_max]
+    threshold = min(origin_max_length_a, origin_max_length_b)
+
+    if batch_a_max == max_length:
+        # batch_a is larger than batch_b
+        smaller_batch, larger_batch = batch_b, batch_a
+    else:
+        smaller_batch, larger_batch = batch_a, batch_b
+
+    # 找出相应数量的对方批次中最小的元素的索引
+    greater_than_threshold_indices = (lengths[smaller_batch] > threshold).nonzero(as_tuple=True)[0]
+    num_elements_to_swap = len(greater_than_threshold_indices)
+    _, min_indices_smaller_batch = torch.topk(lengths[larger_batch], num_elements_to_swap, largest=False)
+
+    # 交换操作
+    smaller_batch[greater_than_threshold_indices], larger_batch[min_indices_smaller_batch] = \
+        larger_batch[min_indices_smaller_batch], smaller_batch[greater_than_threshold_indices]
+
+    if batch_a_max == max_length:
+        return larger_batch.tolist(), smaller_batch.tolist()
+    else:
+        return smaller_batch.tolist(), larger_batch.tolist()
+
+def scheduler(
+        pattern_list,
+        cache_size,
+        batch_size,
+        num_epochs=30,
+        is_balanced=True,
+        schedule_by_length=False,
+        lengths=None,
+        origin_batch1_length=None,
+        origin_batch2_length=None,
+        verbose=False
+    ):
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
+    if schedule_by_length:
+        # 交换操作
+        batch_a, batch_b = indices_within_cluster
+        indices_within_cluster = swap_elements_by_length(
+            lengths, batch_a, batch_b, origin_batch1_length, origin_batch2_length)
 
     on_demand_expert_schedule = []
     for i, cluster in enumerate(indices_within_cluster):

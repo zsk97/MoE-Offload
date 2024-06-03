@@ -179,3 +179,20 @@ def load_encoder(dataset, tokenizer, batch_size, batch_idx):
             pattern[token_id][decode_layer_id][batch_pattern] = 1
     
     return input_data, decode_id, pattern, token_pattern
+
+def truncate_input(input_ids, attention_mask, batch_size):
+    num_batch = attention_mask.shape[0] // batch_size
+
+    max_length = input_ids.shape[-1]
+
+    truncate_input_ids = []
+    for batch_id in range(num_batch):
+        batch_mask = attention_mask[batch_id*batch_size:(batch_id+1)*batch_size]
+        batch_input_ids = input_ids[batch_id*batch_size:(batch_id+1)*batch_size]
+        
+        local_length = batch_mask.sum(-1).max()
+        truncate_id = max_length - local_length
+
+        truncate_input_ids.append(batch_input_ids[:, truncate_id:])
+    
+    return truncate_input_ids

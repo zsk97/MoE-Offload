@@ -118,6 +118,8 @@ def init_env():
 if __name__ == "__main__":
     args = parse_args()
     
+    torch.manual_seed(1234)
+    
     init_env()
 
     rank = torch.distributed.get_rank()
