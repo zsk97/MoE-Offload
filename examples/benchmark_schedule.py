@@ -70,7 +70,7 @@ def benchmark_schedule(state_path,
             start_event.record()
         input_ids = input_data.input_ids.to(device)
         attention_mask = input_data.attention_mask.to(device)
-        decode_input_id = decode_id.to(device).to(torch.long)
+        decode_input_id = decode_id.to(device).to(torch.int)
         predict_pattern = pattern.to(device)
 
         forward_time += schedule_generate(input_ids, 

@@ -52,6 +52,9 @@ def fix_decode_generate(input_ids,
     
     duration = 0
 
+    # lengths = attention_mask.sum(-1)
+    # max_length = lengths.max()
+    # print("Max length in current batch ", max_length)
     # print(f"Start inference")
     model.eval()  # Put model in evaluation mode
     predictor.eval()
@@ -156,35 +159,37 @@ def schedule_generate(input_ids,
     max_length = lengths.max()
     num_layers = 12
     cross_kv_indices = [i for n in range(num_layers) for i in range(4*n+2, 4*n+4)] # (2,3,6,7,10,11,...,46,47)
-    for batch_id in range(num_minibatch):
-        torch.cuda.nvtx.range_push(f"Prefilling Batch {batch_id}")
-        cache_engine.prefetch(pattern)
+    with torch.no_grad():
+        for batch_id in range(num_minibatch):
+            torch.cuda.nvtx.range_push(f"Prefilling Batch {batch_id}")
+            cache_engine.prefetch(pattern)
 
-        indices = list(range(batch_id*batch_size, (batch_id+1)*batch_size))
-        sub_max_length = lengths[indices].max()
-        sub_attention_mask = attention_mask[indices]
-        sub_input_ids = input_ids[indices]
-        if sub_max_length < max_length:
-            sub_input_ids = sub_input_ids[:, -1*sub_max_length:] # (batch_size, seq_len)
-            sub_attention_mask = sub_attention_mask[:, -1*sub_max_length:] # (batch_size, seq_len)
-        
-        with torch.cuda.stream(compute_stream):
-            outputs = model(input_ids=sub_input_ids,
-                            decoder_input_ids=decoder_input_ids,
-                            attention_mask=sub_attention_mask,
-                            past_key_values=past_key_values,
-                            encoder_outputs=encoder_outputs,
-                            output_router_logits=True,
-                            use_cache=True)
-        torch.cuda.nvtx.range_pop()
+            indices = list(range(batch_id*batch_size, (batch_id+1)*batch_size))
+            sub_max_length = lengths[indices].max()
+            # print("Prefilling length ", sub_max_length)
+            sub_attention_mask = attention_mask[indices]
+            sub_input_ids = input_ids[indices]
+            if sub_max_length < max_length:
+                sub_input_ids = sub_input_ids[:, -1*sub_max_length:] # (batch_size, seq_len)
+                sub_attention_mask = sub_attention_mask[:, -1*sub_max_length:] # (batch_size, seq_len)
+            
+            with torch.cuda.stream(compute_stream):
+                outputs = model(input_ids=sub_input_ids,
+                                decoder_input_ids=decoder_input_ids,
+                                attention_mask=sub_attention_mask,
+                                past_key_values=past_key_values,
+                                encoder_outputs=encoder_outputs,
+                                output_router_logits=True,
+                                use_cache=True)
+            torch.cuda.nvtx.range_pop()
 
-        if sub_max_length < max_length:
-            # pad along `seq_len` dimension
-            outputs.encoder_last_hidden_state = torch.nn.functional.pad(
-                outputs.encoder_last_hidden_state, (0, 0, max_length - sub_max_length, 0))
-            outputs.past_key_values = pad_cross_attention_kv(outputs.past_key_values, sub_max_length, max_length, cross_kv_indices)
-        encoder_last_hidden.append(outputs.encoder_last_hidden_state)
-        encoder_key_value.append(outputs.past_key_values)
+            if sub_max_length < max_length:
+                # pad along `seq_len` dimension
+                outputs.encoder_last_hidden_state = torch.nn.functional.pad(
+                    outputs.encoder_last_hidden_state, (0, 0, max_length - sub_max_length, 0))
+                outputs.past_key_values = pad_cross_attention_kv(outputs.past_key_values, sub_max_length, max_length, cross_kv_indices)
+            encoder_last_hidden.append(outputs.encoder_last_hidden_state)
+            encoder_key_value.append(outputs.past_key_values)
     
     torch.cuda.synchronize()
     duration += time.time() - start
@@ -219,6 +224,7 @@ def schedule_generate(input_ids,
                 decoder_input_ids = torch.unsqueeze(decoder_input_ids, dim=-1)
                 input = input_ids[select_index]
                 sub_max_length = lengths[select_index].max()
+                # print(f"Token ID {token_id} batch ID {i} length {sub_max_length}")
                 if sub_max_length < max_length:
                     input = input[:, -1*sub_max_length:]
                     mask = mask[:, -1*sub_max_length:]
