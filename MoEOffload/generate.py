@@ -152,9 +152,11 @@ def schedule_generate(input_ids,
 
     start = time.time()
     # Prefilling stage for num_minibatch
-    lengths = attention_mask.sum(-1)
+    lengths = attention_mask.sum(-1).cpu()
     max_length = lengths.max()
     num_layers = 12
+    batch1_max_length = lengths[:len(lengths)//2].max().cpu()
+    batch2_max_length = lengths[len(lengths)//2:].max().cpu()
     cross_kv_indices = [i for n in range(num_layers) for i in range(4*n+2, 4*n+4)] # (2,3,6,7,10,11,...,46,47)
     for batch_id in range(num_minibatch):
         torch.cuda.nvtx.range_push(f"Prefilling Batch {batch_id}")
@@ -196,7 +198,13 @@ def schedule_generate(input_ids,
     encoder_key_value = key_value_order_merge(encoder_key_value)
 
     # Schedule the first partition
-    batch_index, _ = scheduler(predict_pattern[:, 1].float(), cache_size, batch_size, 30, verbose=False)
+    batch_index, _ = scheduler(
+        predict_pattern[:, 1].float(), cache_size, batch_size, 30,
+        schedule_by_length=True,
+        lengths=lengths,
+        origin_batch1_length=batch1_max_length,
+        origin_batch2_length=batch2_max_length,
+        verbose=False)
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
@@ -253,7 +261,13 @@ def schedule_generate(input_ids,
 
             # Transform KV format and do batch schedule
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
-            batch_index, _ = scheduler(predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30, verbose=False)
+            batch_index, _ = scheduler(
+                predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30,
+                schedule_by_length=True,
+                lengths=lengths,
+                origin_batch1_length=batch1_max_length,
+                origin_batch2_length=batch2_max_length,
+                verbose=False)
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
     
