@@ -94,6 +94,23 @@ def sim_func(pattern_list):
     similarity = 1 - dist / flat_patterns.size(1)
     return similarity
 
+def length_sim_func(lengths):
+    # 将 lengths 转换为 PyTorch tensor
+    lengths_tensor = torch.tensor(lengths).float()
+    
+    # 标准化长度
+    min_length = lengths_tensor.min()
+    max_length = lengths_tensor.max()
+    normalized_lengths = (lengths_tensor - min_length) / (max_length - min_length + 1e-6)  # 加上小常数防止除以零
+    
+    # 计算长度差异
+    diff_matrix = torch.abs(normalized_lengths.view(-1, 1) - normalized_lengths)
+    
+    # 转换差异为相似度
+    similarity = 1 - diff_matrix
+    
+    return similarity
+
 def swap_elements_by_length(lengths, batch_a, batch_b, origin_max_length_a, origin_max_length_b):
     if origin_max_length_a == origin_max_length_b:
         return batch_a, batch_b
@@ -151,9 +168,12 @@ def scheduler(
         return batch_index, None
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
+    if schedule_by_length==0:
+        length_similarity = length_sim_func(lengths)
+        data_similarity += length_similarity
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
-    if schedule_by_length:
+    if schedule_by_length==1:
         # 交换操作
         batch_a, batch_b = indices_within_cluster
         indices_within_cluster = swap_elements_by_length(
