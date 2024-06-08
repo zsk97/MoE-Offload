@@ -158,16 +158,18 @@ def schedule_generate(input_ids,
     lengths = attention_mask.sum(-1).cpu()
     max_length = lengths.max()
     num_layers = 12
-    topk = 3
+    topk = 1
+    schedule_by_length = 2
+    in_order = 0
     batch1_max_length = lengths[:len(lengths)//2].max().cpu()
     batch2_max_length = lengths[len(lengths)//2:].max().cpu()
+    # print(f'Batch 0 length:', batch1_max_length)
+    # print(f'Batch 1 length:', batch2_max_length)
     if batch1_max_length > batch2_max_length:
         batch2_max_length = lengths[len(lengths)//2:].topk(topk)[0][-1].cpu()
     else:
         batch1_max_length = lengths[:len(lengths)//2].topk(topk)[0][-1].cpu()
     
-    # print(f'Batch 0 length:', batch1_max_length)
-    # print(f'Batch 1 length:', batch2_max_length)
     cross_kv_indices = [i for n in range(num_layers) for i in range(4*n+2, 4*n+4)] # (2,3,6,7,10,11,...,46,47)
     with torch.no_grad():
         for batch_id in range(num_minibatch):
@@ -213,11 +215,11 @@ def schedule_generate(input_ids,
     # Schedule the first partition
     batch_index, _ = scheduler(
         predict_pattern[:, 1].float(), cache_size, batch_size, 30,
-        schedule_by_length=True,
+        schedule_by_length=schedule_by_length, # 0: no schedule; 1: length similarity; 2: only support 2 batches length schedule
         lengths=lengths,
         origin_batch1_length=batch1_max_length,
         origin_batch2_length=batch2_max_length,
-        in_order=False,
+        in_order=in_order,
         verbose=False)
     # for i, indices in enumerate(batch_index):
     #     print(f'Batch {i} length: {lengths[indices].max()}')
@@ -280,11 +282,11 @@ def schedule_generate(input_ids,
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
             batch_index, _ = scheduler(
                 predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30,
-                schedule_by_length=True,
+                schedule_by_length=schedule_by_length,
                 lengths=lengths,
                 origin_batch1_length=batch1_max_length,
                 origin_batch2_length=batch2_max_length,
-                in_order=False,
+                in_order=in_order,
                 verbose=False)
             # for i, indices in enumerate(batch_index):
             #     print(f'Batch {i} length: {lengths[indices].max()}')

@@ -168,12 +168,13 @@ def scheduler(
         return batch_index, None
     k = pattern_list.shape[0] // batch_size
     data_similarity = sim_func(pattern_list)
-    if schedule_by_length==0:
-        length_similarity = length_sim_func(lengths)
-        data_similarity += length_similarity
+    lenth_sim_ratio = 1.5
+    if schedule_by_length==1:
+        length_similarity = length_sim_func(lengths).to(data_similarity.device)
+        data_similarity += lenth_sim_ratio * length_similarity
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
-    if schedule_by_length==1:
+    if schedule_by_length==2:
         # 交换操作
         batch_a, batch_b = indices_within_cluster
         indices_within_cluster = swap_elements_by_length(

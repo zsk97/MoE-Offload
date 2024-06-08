@@ -5,13 +5,13 @@ import logging
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import concurrent.futures
-from accessory.util import misc
 import fairscale.nn.model_parallel.initialize as fs_init
 
 from MoEOffload.load_utils import process_schedule_dataset
 from MoEOffload.generate import schedule_generate
 from MoEOffload.build_model import build_offload_switch
 from MoEOffload.args import parse_args
+from MoEOffload.utils import init_distributed_mode
 
 def benchmark_schedule(state_path, 
                       device, 
@@ -38,14 +38,14 @@ def benchmark_schedule(state_path,
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
-    dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")
+    dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()
     predict_stream = torch.cuda.Stream()
 
-    assert num_batches < len(dataset['train']) // schedule_size
+    assert num_batches < len(dataset) // schedule_size
 
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
@@ -112,7 +112,7 @@ def benchmark_schedule(state_path,
 
 def init_env():
     # define the model
-    misc.init_distributed_mode()
+    init_distributed_mode()
     fs_init.initialize_model_parallel(torch.distributed.get_world_size())
 
 if __name__ == "__main__":
@@ -139,4 +139,4 @@ if __name__ == "__main__":
                       args.is_profile,
                       args.is_predict)
 
-# python -m ipdb examples/benchmark_schedule.py --model_path /home/nus-hx/.cache/huggingface/hub/models--google--switch-base-32/snapshots/2018338b8dad760fa7a35a754d532486ef3942f9 --batch_size 64 --offload_size 24
+# python -m ipdb examples/benchmark_schedule.py --model_path /home/supercomputer_ai/.cache/huggingface/hub/models--google--switch-base-64/snapshots/b9fae596288a4a26289db5b28ab014b93fe5b9a9 --batch_size 64 --offload_size 24

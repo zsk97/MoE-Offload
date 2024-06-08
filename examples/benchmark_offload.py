@@ -40,14 +40,14 @@ def benchmark_offload(state_path,
     dataset_name = f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen"
     logging.info("Load dataset " + dataset_name)
     
-    dataset = load_dataset(dataset_name)
+    dataset = load_dataset(dataset_name)['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()
     predict_stream = torch.cuda.Stream()
 
-    assert num_batches < len(dataset['train']) // batch_size
+    assert num_batches < len(dataset) // batch_size
 
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
