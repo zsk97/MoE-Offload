@@ -209,7 +209,7 @@ def schedule_generate(input_ids,
         lengths=lengths,
         origin_batch1_length=batch1_max_length,
         origin_batch2_length=batch2_max_length,
-        in_order=False,
+        in_order=True,
         verbose=False)
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
@@ -274,7 +274,7 @@ def schedule_generate(input_ids,
                 lengths=lengths,
                 origin_batch1_length=batch1_max_length,
                 origin_batch2_length=batch2_max_length,
-                in_order=False,
+                in_order=True,
                 verbose=False)
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
