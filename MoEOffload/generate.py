@@ -158,8 +158,16 @@ def schedule_generate(input_ids,
     lengths = attention_mask.sum(-1).cpu()
     max_length = lengths.max()
     num_layers = 12
+    topk = 3
     batch1_max_length = lengths[:len(lengths)//2].max().cpu()
     batch2_max_length = lengths[len(lengths)//2:].max().cpu()
+    if batch1_max_length > batch2_max_length:
+        batch2_max_length = lengths[len(lengths)//2:].topk(topk)[0][-1].cpu()
+    else:
+        batch1_max_length = lengths[:len(lengths)//2].topk(topk)[0][-1].cpu()
+    
+    # print(f'Batch 0 length:', batch1_max_length)
+    # print(f'Batch 1 length:', batch2_max_length)
     cross_kv_indices = [i for n in range(num_layers) for i in range(4*n+2, 4*n+4)] # (2,3,6,7,10,11,...,46,47)
     with torch.no_grad():
         for batch_id in range(num_minibatch):
@@ -211,6 +219,8 @@ def schedule_generate(input_ids,
         origin_batch2_length=batch2_max_length,
         in_order=True,
         verbose=False)
+    # for i, indices in enumerate(batch_index):
+    #     print(f'Batch {i} length: {lengths[indices].max()}')
     batch_key_value = key_value_select_batch(encoder_key_value, batch_index)
 
     # Decode stage
@@ -276,6 +286,8 @@ def schedule_generate(input_ids,
                 origin_batch2_length=batch2_max_length,
                 in_order=True,
                 verbose=False)
+            # for i, indices in enumerate(batch_index):
+            #     print(f'Batch {i} length: {lengths[indices].max()}')
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
             torch.cuda.nvtx.range_pop()
     
