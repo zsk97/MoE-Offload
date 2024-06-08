@@ -118,7 +118,7 @@ def init_env():
 if __name__ == "__main__":
     args = parse_args()
     
-    torch.manual_seed(1234)
+    torch.manual_seed(args.seed)
     
     init_env()
 

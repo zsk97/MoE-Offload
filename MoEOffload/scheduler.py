@@ -170,7 +170,7 @@ def scheduler(
     data_similarity = sim_func(pattern_list)
     if schedule_by_length==0:
         length_similarity = length_sim_func(lengths)
-        data_similarity += length_similarity
+        data_similarity += length_similarity.cuda()
     labels, centroids_indices, clusters = kmeans_similarity(data_similarity, k, num_epochs, is_balanced)
     indices_within_cluster = list(clusters.values())
     if schedule_by_length==1:

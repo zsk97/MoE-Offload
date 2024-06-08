@@ -138,6 +138,7 @@ def schedule_generate(input_ids,
                     predict_stream=None,
                     is_predict=True,
                     is_baseline=False, 
+                    in_order=False,
                     device=torch.device("cuda:0")):
     model.eval()
 
@@ -213,11 +214,11 @@ def schedule_generate(input_ids,
     # Schedule the first partition
     batch_index, _ = scheduler(
         predict_pattern[:, 1].float(), cache_size, batch_size, 30,
-        schedule_by_length=True,
+        schedule_by_length=0,
         lengths=lengths,
         origin_batch1_length=batch1_max_length,
         origin_batch2_length=batch2_max_length,
-        in_order=True,
+        in_order=in_order,
         verbose=False)
     # for i, indices in enumerate(batch_index):
     #     print(f'Batch {i} length: {lengths[indices].max()}')
@@ -280,11 +281,11 @@ def schedule_generate(input_ids,
             merge_key_value = key_value_select_merge(batch_key_value, batch_index)
             batch_index, _ = scheduler(
                 predict_pattern[:, token_id+1].float(), cache_size, batch_size, 30,
-                schedule_by_length=True,
+                schedule_by_length=0,
                 lengths=lengths,
                 origin_batch1_length=batch1_max_length,
                 origin_batch2_length=batch2_max_length,
-                in_order=True,
+                in_order=in_order,
                 verbose=False)
             # for i, indices in enumerate(batch_index):
             #     print(f'Batch {i} length: {lengths[indices].max()}')

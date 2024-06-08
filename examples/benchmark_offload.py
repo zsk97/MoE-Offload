@@ -107,7 +107,7 @@ if __name__ == "__main__":
         from ipdb import set_trace
         set_trace()
     
-    torch.manual_seed(1234)
+    torch.manual_seed(args.seed)
 
     init_env()
 
