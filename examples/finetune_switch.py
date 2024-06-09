@@ -1,3 +1,4 @@
+# refer to: https://wandb.ai/byyoung3/ml-news/reports/A-Guide-to-DeepSpeed-Zero-With-the-HuggingFace-Trainer--Vmlldzo2ODkwMDc4
 import os
 import torch
 import argparse
