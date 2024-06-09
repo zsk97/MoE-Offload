@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='wmt', help='Dataset to use for fine-tuning')
 parser.add_argument('--model_name', type=str, default='google/switch-base-128', help='Model to use for fine-tuning')
 parser.add_argument('--lr', type=float, default=2e-5, help='Learning rate')
-parser.add_argument('--bs', type=int, default=2, help='Batch size')
+parser.add_argument('--bs', type=int, default=4, help='Batch size')
 parser.add_argument('--wd', type=float, default=0.01, help='Weight decay')
 parser.add_argument('--local_rank', type=int, default=-1, help='Local rank passed from distributed launcher')
 parser.add_argument('--ipdb', action='store_true', help='enable debug mode')
@@ -25,7 +25,7 @@ def main(args):
 
     # 根据命令行参数选择数据集
     if args.dataset == 'wmt':
-        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:20]', 'test': f'test[:20]'})
+        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:10%]', 'test': f'test[:200]'})
         task_type = 'translation'
         test_name = 'test'
     elif args.dataset == 'neulab/conala':
