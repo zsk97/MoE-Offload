@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, SwitchTransformersForConditionalGenerati
 # 命令行参数解析
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='wmt', help='Dataset to use for fine-tuning')
-parser.add_argument('--model_name', type=str, default='google/switch-base-8', help='Model to use for fine-tuning')
+parser.add_argument('--model_name', type=str, default='google/switch-base-128', help='Model to use for fine-tuning')
 parser.add_argument('--ipdb', action='store_true', help='enable debug mode')
 args = parser.parse_args()
 if args.ipdb:
@@ -21,7 +21,7 @@ model = SwitchTransformersForConditionalGeneration.from_pretrained(model_name).t
 
 # 根据命令行参数选择数据集
 if args.dataset == 'wmt':
-    dataset = load_dataset("wmt16", "de-en", split={'train': 'train[:100]', 'test': 'test[:100]'})
+    dataset = load_dataset("wmt16", "de-en", split={'train': 'train[:100%]', 'test': 'test[:1000]'})
     task_type = 'translation'
     test_name = 'test'
 elif args.dataset == 'neulab/conala':
@@ -53,23 +53,27 @@ train_dataset = dataset['train'].map(preprocess_function, batched=True)
 test_dataset = dataset['test'].map(preprocess_function, batched=True)
 
 # 设置训练参数
+lr = 2e-5
+bs = 8
+wd = 0.01
+run_name = args.dataset + '_' + args.model_name.replace('/', '_') + '_lr' + str(lr) + '_bs' + str(bs) + '_wd' + str(wd)
 training_args = TrainingArguments(
-    output_dir="./results/" + args.dataset + '_' + args.model_name,
-    evaluation_strategy="epoch",
-    learning_rate=2e-5,
-    weight_decay=0.01,
+    output_dir="./results/" + args.dataset + '_' + args.model_name.replace('/', '_'),
+    run_name=run_name,
+    eval_strategy="epoch",
+    learning_rate=lr,
+    weight_decay=wd,
     bf16=True,
     tf32=True,
     save_strategy="epoch",
-    save_steps=500,
     save_total_limit=1,
-    logging_steps=20,
-    num_train_epochs=1,
+    logging_steps=200,
+    num_train_epochs=3,
     load_best_model_at_end=True,
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
+    per_device_train_batch_size=bs,
+    per_device_eval_batch_size=bs,
     gradient_accumulation_steps=1,
-    warmup_ratio=0.03,
+    warmup_ratio=0.05,
     lr_scheduler_type="cosine",
 )
 
@@ -83,3 +87,6 @@ trainer = Trainer(
 
 # 开始训练
 trainer.train()
+
+# transformers==4.41.3
+# WANDB_MODE=offline CUDA_VISIBLE_DEVICES=3 python examples/finetune_switch.py --model_name google/switch-base-32
