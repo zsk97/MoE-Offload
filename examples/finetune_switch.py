@@ -25,7 +25,7 @@ def main(args):
 
     # 根据命令行参数选择数据集
     if args.dataset == 'wmt':
-        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:10%]', 'test': f'test[:200]'})
+        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:1%]', 'test': f'test[:200]'})
         task_type = 'translation'
         test_name = 'test'
     elif args.dataset == 'neulab/conala':
@@ -71,12 +71,13 @@ def main(args):
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
-        eval_strategy="epoch",
+        eval_strategy="steps",
         learning_rate=lr,
         weight_decay=wd,
         bf16=True,
         tf32=True,
-        save_strategy="epoch",
+        save_strategy="steps",
+        save_steps=1000,
         save_total_limit=1,
         logging_steps=200,
         num_train_epochs=3,
