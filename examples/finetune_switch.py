@@ -3,7 +3,9 @@ import os
 import torch
 import argparse
 from datasets import load_dataset
-from transformers import AutoTokenizer, SwitchTransformersForConditionalGeneration, Trainer, TrainingArguments, DataCollatorWithPadding, DataCollatorForSeq2Seq
+from transformers import AutoTokenizer, SwitchTransformersForConditionalGeneration, Trainer, TrainingArguments, DataCollatorForSeq2Seq
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training, PeftModel
+
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
@@ -25,7 +27,7 @@ def main(args):
 
     # 根据命令行参数选择数据集
     if args.dataset == 'wmt':
-        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:1%]', 'test': f'test[:200]'})
+        dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:10%]', 'test': f'test[:200]'})
         task_type = 'translation'
         test_name = 'test'
     elif args.dataset == 'neulab/conala':
@@ -64,8 +66,26 @@ def main(args):
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, return_tensors="pt", padding="longest")
 
     # 设置训练参数
-    model = SwitchTransformersForConditionalGeneration.from_pretrained(model_name).to(device)
+    model = SwitchTransformersForConditionalGeneration.from_pretrained(
+        model_name,
+        # load_in_8bit=True,
+        device_map='auto'
+    )
     model.config.decoder_start_token_id = 0
+    model.config.use_cache = False
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False,
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        target_modules=['q', 'k', 'v', 'o', 'lm_head'],
+        bias="none"
+    )
+    # model = prepare_model_for_kbit_training(model)
+    model.enable_input_require_grads()
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+
     run_name = args.dataset + '_' + args.model_name.replace('/', '_') + '_lr' + str(lr) + '_bs' + str(bs) + '_wd' + str(wd)
     output_dir="./results/" + args.dataset + '_' + args.model_name.replace('/', '_')
     training_args = TrainingArguments(
@@ -80,12 +100,12 @@ def main(args):
         save_steps=1000,
         save_total_limit=1,
         logging_steps=200,
-        num_train_epochs=3,
+        num_train_epochs=20,
         load_best_model_at_end=True,
         warmup_ratio=0.05,
         lr_scheduler_type="cosine",
-        deepspeed="./ds_finetune_switch.json",
-        gradient_checkpointing=True,
+        # deepspeed="./ds_finetune_switch.json",
+        # gradient_checkpointing=True,
         gradient_accumulation_steps=8,
         per_device_train_batch_size=bs,
         per_device_eval_batch_size=bs,
@@ -104,6 +124,12 @@ def main(args):
     trainer.train()
     if training_args.local_rank == 0:
         model.save_pretrained(training_args.output_dir+'/model_state_dict', state_dict=model.state_dict(), safe_serialization=False)
+    # lora_adapter_path = output_dir + '/lora'
+    # model.save_pretrained(lora_adapter_path, save_adapter=True, save_config=True)
+    # model = PeftModel.from_pretrained(SwitchTransformersForConditionalGeneration.from_pretrained(args.model_name), lora_adapter_path)
+
+    merged_model = model.merge_and_unload()
+    merged_model.save_pretrained(f"{output_dir}/merged_model")
 
 
 if __name__ == '__main__':
