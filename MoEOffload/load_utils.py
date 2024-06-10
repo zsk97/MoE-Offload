@@ -2,7 +2,7 @@ import torch
 import logging
 
 def process_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
-    len_dataset = len(dataset['train'])
+    len_dataset = len(dataset)
     num_batch = len_dataset // batch_size
     num_encoder_layer = 12
 
@@ -19,7 +19,7 @@ def process_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
 
         # Extract the batch info
         for j in range(batch_size):
-            sample = dataset['train'][i*batch_size+j]
+            sample = dataset[i*batch_size+j]
             prompts.append(sample['prompt_text'])
             decode_id.append(sample['decode_ids'])
             decode_pattern.append(sample['decode_pattern'])
@@ -66,7 +66,7 @@ def process_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
         yield input_data, decode_id, pattern
 
 def process_schedule_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0):
-    len_dataset = len(dataset['train'])
+    len_dataset = len(dataset)
     num_batch = len_dataset // batch_size
     num_encoder_layer = 12
 
@@ -83,7 +83,7 @@ def process_schedule_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0
 
         # Extract the batch info
         for j in range(batch_size):
-            sample = dataset['train'][i*batch_size+j]
+            sample = dataset[i*batch_size+j]
             prompts.append(sample['prompt_text'])
             decode_id.append(sample['decode_ids'])
             decode_pattern.append(sample['decode_pattern'])
@@ -131,7 +131,7 @@ def process_schedule_dataset(dataset, tokenizer, batch_size, num_expert, top_n=0
     
 
 def load_encoder(dataset, tokenizer, batch_size, batch_idx):
-    len_dataset = len(dataset['train'])
+    len_dataset = len(dataset)
     num_batch = len_dataset // batch_size
     num_moe_layer = 6
     num_expert = 32
@@ -145,7 +145,7 @@ def load_encoder(dataset, tokenizer, batch_size, batch_idx):
 
     # Extract the batch info
     for j in range(batch_size):
-        sample = dataset['train'][i*batch_size+j]
+        sample = dataset[i*batch_size+j]
         prompts.append(sample['prompt_text'])
         decode_id.append(sample['decode_ids'])
         decode_pattern.append(sample['decode_pattern'])
