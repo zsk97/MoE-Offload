@@ -34,7 +34,7 @@ pretrained_switch_weights_map = {
     },
     'google/switch-base-32': {
         'file_type': 'bin',
-        'index_file': None
+        'index_file': 'pytorch_model.bin.index.json'
     },
     'google/switch-base-64': {
         'file_type': 'bin',
@@ -118,7 +118,10 @@ def make_and_load_expert_wrapper(
                 expert = make_empty_expert(config).bfloat16()
                 for idx in ['i', 'o']:
                     layer = getattr(expert, f"w{idx}")
-                    w_to_load = state_dict[f'{module_idx}.w{idx}.weight']
+                    key = f'{module_idx}.w{idx}.weight'
+                    if key not in state_dict:
+                        continue
+                    w_to_load = state_dict[key]
                     layer.weight.data.copy_(w_to_load)
         else:
             # 单文件权重
