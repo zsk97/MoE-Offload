@@ -50,6 +50,9 @@ def main(args):
         num_samples = 10000
         dataset = load_dataset("wmt16", "de-en", split={'train': f'train[:{num_samples}]'})['train']
         data = [text['de'] for text in dataset["translation"]]
+    elif dataset_name == 'xsum':
+        dataset = load_dataset("EdinburghNLP/xsum")['test']
+        data = [x[:1000] for x in dataset['document']]
     
     data = data*3
     ###### random order
