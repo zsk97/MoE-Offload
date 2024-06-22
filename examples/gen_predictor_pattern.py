@@ -15,7 +15,7 @@ def load_batch(dataset, batch_indices, tokenizer):
     samples = dataset.select(batch_indices)
     prompts = samples["prompt_text"]
     prompt_data = tokenizer(
-        prompts, padding=True, return_tensors="pt", return_attention_mask=True, model_max_length=512, truncation=True)
+        prompts, padding=True, return_tensors="pt", return_attention_mask=True, max_length=512, truncation=True)
     prompt_ids, attention_mask = list(prompt_data.values())
     decode_ids = torch.tensor(samples["decode_ids"]).long()
     return prompt_ids, attention_mask, decode_ids
@@ -33,10 +33,10 @@ def main(args):
     predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small")
     predictor.lm_head = torch.nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
     predictor.load_state_dict(torch.load(args.predictor_ckpt, map_location=torch.device('cpu')))
-    predictor = predictor.to(device).eval()
-    # predictor = predictor.to(device).bfloat16().eval()
+    # predictor = predictor.to(device).eval()
+    predictor = predictor.to(device).bfloat16().eval()
 
-    dataset_name = f"marsggbo/wmt16_switch{num_experts}_token_patterns"
+    dataset_name = f"marsggbo/xsum_switch{num_experts}_token_patterns"
     new_dataset_name = dataset_name.replace('_token_patterns', '_token_real_and_predicted_patterns')
     origin_dataset = load_dataset(dataset_name)['train']
     dataset = origin_dataset
@@ -95,4 +95,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     main(args)
 
-# CUDA_VISIBLE_DEVICES=1 python gen_predictor_pattern.py --num_experts 32 --predictor_ckpt ...
+# CUDA_VISIBLE_DEVICES=1 python gen_predictor_pattern.py --num_experts 32 --predictor_ckpt /path/to/*pytorch_model.bin
