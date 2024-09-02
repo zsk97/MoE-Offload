@@ -12,7 +12,7 @@ switch=$1
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 32 48 56
+        for offload_size in 16 24 28
         do
             for batch_size in 8 16 32 64 128
             do
@@ -40,7 +40,7 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 64 96 112
+        for offload_size in 64 96 112 120
         do
             for batch_size in 4 8 16 32 64 128 256
             do
