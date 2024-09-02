@@ -58,7 +58,7 @@ class MixtralExpertWrapper(nn.Module):
         for x in nested_flatten(state_dict):
             if not isinstance(x, torch.Tensor):
                 continue
-            storage_size += x.nbytes
+            storage_size += x.nbytes # nbytes is only supported by torch>=2.1.0
             offsets.append(storage_size)
 
         storage = torch.UntypedStorage(storage_size, device=device) 
@@ -139,7 +139,7 @@ class SwitchExpertWrapper(nn.Module):
             for x in nested_flatten(state_dict):
                 if not isinstance(x, torch.Tensor):
                     continue
-                storage_size += x.nbytes
+                storage_size += x.nbytes # nbytes is only supported by torch>=2.1.0
                 offsets.append(storage_size)
 
             storage = torch.UntypedStorage(storage_size, device=device) 

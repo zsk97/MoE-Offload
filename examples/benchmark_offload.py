@@ -24,7 +24,7 @@ def benchmark_offload(state_path,
                       is_profile=False,
                       is_predict=False):
 
-    pattern = r'switch-base-(16|64|128)'
+    pattern = r'switch-base-(16|32|64|128)'
     match = re.search(pattern, state_path)
     if match:
         # Output the captured number
