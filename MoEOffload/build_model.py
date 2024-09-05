@@ -34,7 +34,7 @@ pretrained_switch_weights_map = {
     },
     'google/switch-base-32': {
         'file_type': 'bin',
-        'index_file': None
+        'index_file': 'pytorch_model.bin.index.json'
     },
     'google/switch-base-64': {
         'file_type': 'bin',
@@ -108,6 +108,8 @@ def make_and_load_expert_wrapper(
                 weight_map = json.load(f)["weight_map"]
                 state_fpaths = [weight_map[f"{module_idx}.w{i}.weight"] for i in ['i', 'o']]
                 state_fpaths = list(set(state_fpaths))
+            is_module_loaded = {}
+            expert = make_empty_expert(config).bfloat16()
             for state_fpath in state_fpaths:
                 if state_fpath not in global_state_cache:
                     state_dict = weight_load_func(os.path.join(states_dir, state_fpath), device)
@@ -115,11 +117,19 @@ def make_and_load_expert_wrapper(
                 else:
                     # Retrieve the state dictionary from the global cache
                     state_dict = global_state_cache[state_fpath]
-                expert = make_empty_expert(config).bfloat16()
                 for idx in ['i', 'o']:
                     layer = getattr(expert, f"w{idx}")
-                    w_to_load = state_dict[f'{module_idx}.w{idx}.weight']
-                    layer.weight.data.copy_(w_to_load)
+                    name_module_to_load = f'{module_idx}.w{idx}.weight'
+                    try:
+                        w_to_load = state_dict[name_module_to_load]
+                        is_module_loaded[name_module_to_load] = True
+                        layer.weight.data.copy_(w_to_load)
+                    except Exception as e:
+                        if not is_module_loaded.get(name_module_to_load, False):
+                            is_module_loaded[name_module_to_load] = False
+            for key, val in is_module_loaded.items():
+                if not val:
+                    print(key, 'not loaded')
         else:
             # 单文件权重
             if weight_file_type == 'bin':
@@ -130,7 +140,6 @@ def make_and_load_expert_wrapper(
             global MODEL_STATE_DICT
             if MODEL_STATE_DICT is None:
                 MODEL_STATE_DICT = weight_load_func(state_fpaths[0], device)
-            expert = make_empty_expert(config).bfloat16()
             for idx in ['i', 'o']:
                 layer = getattr(expert, f"w{idx}")
                 w_to_load = MODEL_STATE_DICT[f'{module_idx}.w{idx}.weight']

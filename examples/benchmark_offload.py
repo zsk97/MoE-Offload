@@ -90,11 +90,13 @@ def benchmark_offload(state_path,
         torch.cuda.cudart().cudaProfilerStop()
     end_event.record()
     torch.cuda.synchronize()
+    memory_allocated = torch.cuda.max_memory_reserved(0) / 1024 ** 3
 
     # Calculate the elapsed time in milliseconds
     elapsed_time_ms = start_event.elapsed_time(end_event)
     print(f"Elapsed time: {elapsed_time_ms} ms")
     print(f"Forward computation time: {forward_time*1000} ms")
+    print(f"Max GPU memory usage: {memory_allocated} GB")
 
 def init_env():
     # define the model
