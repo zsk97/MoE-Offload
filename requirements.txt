@@ -1,0 +1,8 @@
+fairscale
+dm-tree
+datasets
+transformers
+huggingface-hub
+torch>=2.1.0
+ipdb
+ipython
