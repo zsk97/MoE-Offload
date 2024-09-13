@@ -3,7 +3,7 @@ import torch.nn as nn
 import re
 import logging
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoConfig
 import concurrent.futures
 import fairscale.nn.model_parallel.initialize as fs_init
 
@@ -53,7 +53,11 @@ def benchmark_offload(state_path,
     num_experts_per_layer = int(match.group(1))
     NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
 
-    predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-base")
+    predictor_config = AutoConfig.from_pretrained("google-t5/t5-small")
+    predictor_config.d_model = 64
+    predictor_config.d_ff = 2048
+    predictor = AutoModelForSeq2SeqLM.from_config(predictor_config)
+    # predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small")
     predictor.lm_head = nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
     predictor = predictor.bfloat16().to(device)
 

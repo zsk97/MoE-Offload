@@ -25,7 +25,7 @@ raw_log_file="baseline_raw_experiment_log.txt"
 
 
 # Initialize CSV file with headers
-echo "Switch,Offload Size,Batch Size,Elapsed Time,Forward Computation Time" >> $csv_file
+echo "Switch,Offload Size,Batch Size,Elapsed Time,Forward Computation Time,GPU Mem(GB)" >> $csv_file
 
 # Function to log and append to CSV
 log_experiment() {
@@ -53,15 +53,15 @@ log_experiment() {
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 16 24 28
+        for offload_size in 0 8 16 24
         do
-            for batch_size in 8 16 32 64
+            for batch_size in 4 8 16 32 
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-32 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
-                                                --max_new_tokens=16 \
-                                                --num_batches=20 \
+                                                --max_new_tokens=$max_new_tokens \
+                                                --num_batches=$num_batches \
                                                 --is_baseline 2>&1 | tee -a $raw_log_file)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
@@ -71,15 +71,15 @@ case $switch in
         done   
         ;;
     switch-64)
-        for offload_size in 32 48 56
+        for offload_size in 0 8 16 32 48
         do
-            for batch_size in 8 16 32 64 128
+            for batch_size in 8 16 32 64
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-64 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
-                                                --max_new_tokens=16 \
-                                                --num_batches=20 \
+                                                --max_new_tokens=$max_new_tokens \
+                                                --num_batches=$num_batches \
                                                 --is_baseline 2>&1 | tee -a $raw_log_file)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
@@ -89,15 +89,15 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 64 96 112
+        for offload_size in 16 32 64 96 112 
         do
-            for batch_size in 4 8 16 32 64 128 256
+            for batch_size in 16 32 64 128
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-128 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
-                                                --max_new_tokens=16 \
-                                                --num_batches=20 \
+                                                --max_new_tokens=$max_new_tokens \
+                                                --num_batches=$num_batches \
                                                 --is_baseline 2>&1 | tee -a $raw_log_file)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')

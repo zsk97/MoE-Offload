@@ -1,0 +1,21 @@
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,4,true,false,1,8,1234,16,20,35489.31640625,,2.30078125
+switch-32,16,8,true,false,1,16,1234,16,20,42124.0,,2.369140625
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,4,true,false,1,8,1234,16,20,33035.8671875,23282.26327896118,2.30078125
+switch-32,16,8,true,false,1,16,1234,16,20,39211.94921875,27842.822313308716,2.369140625
+switch-32,16,16,true,false,1,32,1234,16,20,51807.44140625,38623.737812042236,2.615234375
+switch-32,16,32,true,false,1,64,1234,16,20,64059.98046875,50954.654932022095,3.283203125
+switch-32,24,4,true,false,1,8,1234,16,20,34975.015625,26164.196014404297,1.421875
+switch-32,24,8,true,false,1,16,1234,16,20,43121.6640625,30131.672382354736,1.490234375
+switch-32,24,16,true,false,1,32,1234,16,20,54066.984375,42119.566202163696,1.71875
+switch-32,24,32,true,false,1,64,1234,16,20,65353.4921875,52417.12737083435,2.39453125
+switch-32,28,4,true,false,1,8,1234,16,20,34474.73046875,24284.825563430786,0.974609375
+switch-32,28,8,true,false,1,16,1234,16,20,43042.54296875,32729.78663444519,1.0625
+switch-32,28,16,true,false,1,32,1234,16,20,54271.50390625,41387.803077697754,1.291015625
+switch-32,28,32,true,false,1,64,1234,16,20,65979.2109375,51738.887310028076,1.955078125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,32,8,true,false,1,16,1234,16,20,39511.03125,28861.88840866089,4.20703125
+switch-64,32,16,true,false,1,32,1234,16,20,51350.21875,39684.894323349,4.33984375
+switch-64,32,32,true,false,1,64,1234,16,20,70399.4921875,56874.9303817749,5.1484375

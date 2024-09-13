@@ -11,20 +11,21 @@ fi
 switch=$1
 
 # Default values for parameters
-is_predict=false
+is_predict=true
 in_order=false
-top_n=0
+top_n=1
 seed=1234
 max_new_tokens=16
 num_batches=20
+schedule_size=0
 
 # Define log file and CSV file with dynamic names
-log_file="offload_experiment_log.txt"
-csv_file="offload_experiment_data.csv"
-raw_log_file="offload_raw_experiment_log.txt"
+log_file="offload_overlap_experiment_log.txt"
+csv_file="offload_overlap_experiment_data.csv"
+raw_log_file="offload_overlap_raw_experiment_log.txt"
 
 # Initialize CSV file with headers
-echo "Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time" > $csv_file
+echo "Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)" >> $csv_file
 
 # Function to log and append to CSV
 log_experiment() {
@@ -60,15 +61,15 @@ log_experiment() {
     echo "----------------------------------------" >> $log_file
 
     # Append to CSV file
-    echo "$switch,$offload_size,$batch_size,$is_predict,$in_order,$top_n,$schedule_size,$seed,$max_new_tokens,$num_batches,$elapsed_time,$forward_time" >> $csv_file
+    echo "$switch,$offload_size,$batch_size,$is_predict,$in_order,$top_n,$schedule_size,$seed,$max_new_tokens,$num_batches,$elapsed_time,$forward_time,$max_gpu_mem" >> $csv_file
 }
 
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 16 24 28
+        for offload_size in 16 24 # 0 8 
         do
-            for batch_size in 8 16 32 64
+            for batch_size in 4 8 16 32 # 4 8 16 32 64
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"
@@ -100,9 +101,9 @@ case $switch in
         done   
         ;;
     switch-64)
-        for offload_size in 32 48 56
+        for offload_size in 32 48 # 0 8 16
         do
-            for batch_size in 8 16 32 64 128
+            for batch_size in 8 16 32 64
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"
@@ -134,9 +135,9 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 64 96 112 120
+        for offload_size in 64 96 112 # 16 32 
         do
-            for batch_size in 4 8 16 32 64 128 256
+            for batch_size in 16 32 64 128 # 8 16 32 64
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"

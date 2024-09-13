@@ -192,7 +192,7 @@ def build_offload_switch(
         MoEWrapper = SwitchMoeWrapperV1
     
     with with_default_dtype(torch.bfloat16):
-        model = SwitchTransformersForConditionalGeneration(config).to(device)
+        model = SwitchTransformersForConditionalGeneration(config)
     
     model_config = config
     expert_cache = expertCache(
@@ -232,7 +232,7 @@ def build_offload_switch(
                     expert_prefix=block_type,
                     expert_uid=(base_layer_idx+block_idx, expert_idx),
                     base_layer_idx=base_layer_idx,
-                    device=device,
+                    device="cpu",
                 )
 
                 expert_cache.add_expert(
