@@ -67,9 +67,9 @@ log_experiment() {
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 16 24 # 0 8 
+        for offload_size in 30 28 24 16
         do
-            for batch_size in 4 8 16 32 # 4 8 16 32 64
+            for batch_size in 2 4 8
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"
@@ -101,9 +101,9 @@ case $switch in
         done   
         ;;
     switch-64)
-        for offload_size in 32 48 # 0 8 16
+        for offload_size in 62 60 56 48
         do
-            for batch_size in 8 16 32 64
+            for batch_size in 2 4 8
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"
@@ -135,9 +135,9 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 64 96 112 # 16 32 
+        for offload_size in 126 124 120 112
         do
-            for batch_size in 16 32 64 128 # 8 16 32 64
+            for batch_size in 2 4 8
             do
                 if [ "$is_predict" = true ]; then
                     predict_arg="--is_predict"

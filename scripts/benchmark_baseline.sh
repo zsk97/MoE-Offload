@@ -53,9 +53,9 @@ log_experiment() {
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 0 8 16 24
+        for offload_size in 30 28 24 16
         do
-            for batch_size in 4 8 16 32 
+            for batch_size in 2 4 8
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-32 \
                                                 --offload_size=$offload_size \
@@ -71,9 +71,9 @@ case $switch in
         done   
         ;;
     switch-64)
-        for offload_size in 0 8 16 32 48
+        for offload_size in 62 60 56 48
         do
-            for batch_size in 8 16 32 64
+            for batch_size in 2 4 8
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-64 \
                                                 --offload_size=$offload_size \
@@ -89,9 +89,9 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 16 32 64 96 112 
+        for offload_size in 126 124 120 112
         do
-            for batch_size in 16 32 64 128
+            for batch_size in 2 4 8
             do
                 output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-128 \
                                                 --offload_size=$offload_size \
