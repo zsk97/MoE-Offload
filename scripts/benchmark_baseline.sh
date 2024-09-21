@@ -1,5 +1,6 @@
 #!/bin/bash
 export PATH=/mnt/raid/tangzhenheng/anaconda3/envs/moe/bin:$PATH
+BASE_PATH=/home/xinmatrix/hexin/datasets
 
 # Check if exactly one argument is provided
 if [ "$#" -ne 1 ]; then
@@ -55,54 +56,75 @@ case $switch in
     switch-32)
         for offload_size in 30 28 24 16
         do
-            for batch_size in 2 4 8
+            cache_size=$((32 - offload_size))
+            max_batch_size=$((cache_size * 2))
+            batch_size=2
+            while [ $batch_size -le $max_batch_size ]
             do
-                output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-32 \
+                cmd="python examples/benchmark_offload.py --model_path=$BASE_PATH/switch-base-32 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
                                                 --max_new_tokens=$max_new_tokens \
                                                 --num_batches=$num_batches \
-                                                --is_baseline 2>&1 | tee -a $raw_log_file)
+                                                --is_baseline 2>&1 | tee -a $raw_log_file"
+                echo $cmd
+                output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
                 log_experiment "$switch" "$offload_size" "$batch_size" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                echo $cache_size, $batch_size
+                batch_size=$((batch_size * 2))
             done
         done   
         ;;
     switch-64)
         for offload_size in 62 60 56 48
         do
-            for batch_size in 2 4 8
+            cache_size=$((64 - offload_size))
+            max_batch_size=$((cache_size * 2))
+            batch_size=2
+            while [ $batch_size -le $max_batch_size ]
             do
-                output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-64 \
+                cmd="python examples/benchmark_offload.py --model_path=$BASE_PATH/switch-base-64 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
                                                 --max_new_tokens=$max_new_tokens \
                                                 --num_batches=$num_batches \
-                                                --is_baseline 2>&1 | tee -a $raw_log_file)
+                                                --is_baseline 2>&1 | tee -a $raw_log_file"
+                echo $cmd
+                output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
                 log_experiment "$switch" "$offload_size" "$batch_size" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                echo $cache_size, $batch_size
+                batch_size=$((batch_size * 2))
             done
         done
         ;;
     switch-128)
         for offload_size in 126 124 120 112
         do
-            for batch_size in 2 4 8
+            cache_size=$((128 - offload_size))
+            max_batch_size=$((cache_size * 2))
+            batch_size=2
+            while [ $batch_size -le $max_batch_size ]
             do
-                output=$(python examples/benchmark_offload.py --model_path=/home/tangzhenheng/hexin/data/switch-base-finetuned-wmt16/switch-base-128 \
+                cmd="python examples/benchmark_offload.py --model_path=$BASE_PATH/switch-base-128 \
                                                 --offload_size=$offload_size \
                                                 --batch_size=$batch_size \
                                                 --max_new_tokens=$max_new_tokens \
                                                 --num_batches=$num_batches \
-                                                --is_baseline 2>&1 | tee -a $raw_log_file)
+                                                --is_baseline 2>&1 | tee -a $raw_log_file"
+                echo $cmd
+                output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
                 log_experiment "$switch" "$offload_size" "$batch_size" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                echo $cache_size, $batch_size
+                batch_size=$((batch_size * 2))
             done
         done
         ;;

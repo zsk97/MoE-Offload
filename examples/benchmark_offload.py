@@ -1,3 +1,5 @@
+import os
+from glob import glob
 import torch
 import torch.nn as nn
 import re
@@ -37,10 +39,13 @@ def benchmark_offload(state_path,
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
-    dataset_name = f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen"
-    logging.info("Load dataset " + dataset_name)
-    
-    dataset = load_dataset(dataset_name)['train']
+    num_decoder_sparse_layer = 6 # switch-32/64/128/256
+    num_experts_per_layer = int(match.group(1))
+    NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
+
+    # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
+    data_name = 'wmt16'
+    dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
@@ -49,16 +54,24 @@ def benchmark_offload(state_path,
 
     assert num_batches < len(dataset) // batch_size
 
-    num_decoder_sparse_layer = 6 # switch-32/64/128/256
-    num_experts_per_layer = int(match.group(1))
-    NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
+    model_name = f'marsggbo/t5-small_dff2048_dmodel32_token-pattern-predictor_switch{num_experts_per_layer}_{data_name}'
+    predictor = AutoModelForSeq2SeqLM.from_pretrained(
+        model_name, ignore_mismatched_sizes=True, use_safetensors=False
+    ) # to download the model weights (binary file) from huggingface
+    home_path = os.path.expanduser('~')
+    ckpt_path = f"{home_path}/.cache/huggingface/hub/*{model_name.split('/')[-1]}/snapshots/*/*bin"
+    ckpt_path = glob(ckpt_path)[0]
+    model_config = AutoConfig.from_pretrained(model_name)
+    predictor = AutoModelForSeq2SeqLM.from_config(config=model_config)
+    predictor.lm_head = torch.nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
+    predictor.load_state_dict(torch.load(ckpt_path, map_location='cpu'), strict=True)
 
-    predictor_config = AutoConfig.from_pretrained("google-t5/t5-small")
-    predictor_config.d_model = 64
-    predictor_config.d_ff = 2048
-    predictor = AutoModelForSeq2SeqLM.from_config(predictor_config)
-    # predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small")
-    predictor.lm_head = nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
+    # predictor_config = AutoConfig.from_pretrained("google-t5/t5-small")
+    # predictor_config.d_model = 64
+    # predictor_config.d_ff = 2048
+    # predictor = AutoModelForSeq2SeqLM.from_config(predictor_config)
+    # # predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-base")
+    # predictor.lm_head = nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
     predictor = predictor.bfloat16().to(device)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
