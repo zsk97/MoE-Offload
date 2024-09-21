@@ -141,6 +141,8 @@ def schedule_generate(input_ids,
                     in_order=False,
                     device=torch.device("cuda:0")):
     model.eval()
+    predictor.eval()
+    past = past_key_values
 
     decoder_input_ids = torch.tensor([[0]]*batch_size).long().to(device)
     encoder_outputs = None
@@ -229,6 +231,10 @@ def schedule_generate(input_ids,
     # Decode stage
     with torch.no_grad():
         for token_id in range(1, max_new_tokens):
+            if is_predict:
+                futures = [executor.submit(launch_predict, predictor, input_ids, 
+                                                    decoder_input_ids, attention_mask, 
+                                                    past, encoder_outputs, predict_stream)]
             torch.cuda.nvtx.range_push(f"Step {token_id}")
             for i in range(num_minibatch):
                 torch.cuda.nvtx.range_push(f"Batch {i}")
@@ -292,6 +298,9 @@ def schedule_generate(input_ids,
             # for i, indices in enumerate(batch_index):
             #     print(f'Batch {i} length: {lengths[indices].max()}')
             batch_key_value = key_value_select_batch(merge_key_value, batch_index)
+            if is_predict:
+                # Wait for all tasks to complete
+                concurrent.futures.wait(futures)
             torch.cuda.nvtx.range_pop()
     
     return duration

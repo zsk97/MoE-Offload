@@ -40,8 +40,6 @@ def benchmark_schedule(state_path,
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
 
-    assert num_batches < len(dataset) // schedule_size
-
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
     NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
@@ -50,6 +48,7 @@ def benchmark_schedule(state_path,
     data_name = 'wmt16'
     dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
     dataset.shuffle(seed=1234)
+    assert num_batches < len(dataset) // schedule_size
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()

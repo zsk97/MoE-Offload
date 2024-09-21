@@ -3,18 +3,23 @@ export PATH=/mnt/raid/tangzhenheng/anaconda3/envs/moe/bin:$PATH
 BASE_PATH=/home/xinmatrix/hexin/datasets
 
 # Check if exactly one argument is provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 {switch-32|switch-64|switch-128}"
+if [ "$#" -ne 1 ] && [ "$#" -ne 2 ]; then
+    echo "Usage: $0 {switch-32|switch-64|switch-128} [top_n]"
     exit 1
 fi
 
 # Read the input argument
 switch=$1
 
+if [ "$#" -eq 2 ]; then
+    top_n=$2
+else
+    top_n=1
+fi
+
 # Default values for parameters
 is_predict=true
 in_order=false
-top_n=1
 seed=1234
 max_new_tokens=16
 num_batches=20
