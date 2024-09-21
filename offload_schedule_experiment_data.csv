@@ -83,3 +83,10 @@ switch-64,48,2,true,false,1,4,1234,16,10,14443.6201171875,11272.874355316162,2.2
 switch-64,48,4,true,false,1,8,1234,16,10,16794.666015625,12850.239515304565,2.2890625
 switch-64,48,8,true,false,1,16,1234,16,10,19938.39453125,16742.39230155945,2.392578125
 Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+
+##### 4090 #####
+
+
+
+
+##### A40 #####
