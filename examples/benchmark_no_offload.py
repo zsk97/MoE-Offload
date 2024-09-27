@@ -98,13 +98,17 @@ def benchmark_no_offload(
         logging.error("No match model found")
         exit(0)
 
+    memory_function = lambda: torch.cuda.max_memory_reserved(0) / 1024 ** 3
+    prev_memory = memory_function()
     model_name = "google/" + match.group(0)
     moe_model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_safetensors=False)
     moe_model = moe_model.bfloat16().to(device)
+    print(f"Memory for moe model: {memory_function() - prev_memory} GB")
+    prev_memory = memory_function()
 
     num_experts_per_layer = int(match.group(1))
     # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
-    data_name = 'wmt16'
+    data_name = 'xsum'
     dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
@@ -148,8 +152,8 @@ def benchmark_no_offload(
         torch.cuda.cudart().cudaProfilerStop()
     end_event.record()
     torch.cuda.synchronize()
-    memory_allocated = torch.cuda.max_memory_reserved(0) / 1024 ** 3
-
+    memory_allocated = memory_function()
+    print(f"Memory for generation: {memory_allocated - prev_memory} GB")
     # Calculate the elapsed time in milliseconds
     elapsed_time_ms = start_event.elapsed_time(end_event)
     print(f"Elapsed time: {elapsed_time_ms} ms")

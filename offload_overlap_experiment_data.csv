@@ -642,5 +642,3 @@ switch-128,112,4,true,false,2,0,1234,16,20,11080.9130859375,8771.048545837402,2.
 switch-128,112,8,true,false,2,0,1234,16,20,16723.974609375,12215.775966644287,2.45703125
 switch-128,112,16,true,false,2,0,1234,16,20,24712.994140625,18128.00908088684,2.69921875
 switch-128,112,32,true,false,2,0,1234,16,20,29331.201171875,22573.903799057007,3.00390625
-Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
-Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)

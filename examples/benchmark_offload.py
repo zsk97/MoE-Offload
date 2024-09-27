@@ -35,16 +35,20 @@ def benchmark_offload(state_path,
         logging.error("No match model found")
         exit(0)
 
+    memory_function = lambda: torch.cuda.max_memory_allocated(0) / 1024 ** 3
+    # memory_function = lambda: torch.cuda.max_memory_reserved(0) / 1024 ** 3
+    prev_memory = memory_function()
     model_name = "google/" + match.group(0)
     offload_model, cache_engine = build_offload_switch(offload_per_layer=offload_size, state_path=state_path, model_name=model_name, is_baseline=is_baseline, is_profile=is_profile)
     offload_model = offload_model.bfloat16().to(device)
-
+    print(f"Memory for offload model: {memory_function() - prev_memory} GB")
+    prev_memory = memory_function()
     num_decoder_sparse_layer = 6 # switch-32/64/128/256
     num_experts_per_layer = int(match.group(1))
     NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
 
     # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
-    data_name = 'wmt16'
+    data_name = 'xsum'
     dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
@@ -73,6 +77,8 @@ def benchmark_offload(state_path,
     # # predictor = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-base")
     # predictor.lm_head = nn.Linear(predictor.config.hidden_size, NUM_LABELS, bias=False)
     predictor = predictor.bfloat16().to(device)
+    print(f"Memory for predictor: {memory_function() - prev_memory} GB")
+    prev_memory = memory_function()
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     
@@ -108,6 +114,9 @@ def benchmark_offload(state_path,
     end_event.record()
     torch.cuda.synchronize()
     memory_allocated = torch.cuda.max_memory_reserved(0) / 1024 ** 3
+    print(f"Memory for generation: {memory_function() - prev_memory} GB")
+    prev_memory = memory_function()
+    print(f"Memory in the end: {memory_function()} GB")
 
     # Calculate the elapsed time in milliseconds
     elapsed_time_ms = start_event.elapsed_time(end_event)
