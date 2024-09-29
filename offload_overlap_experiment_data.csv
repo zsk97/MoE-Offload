@@ -642,3 +642,45 @@ switch-128,112,4,true,false,2,0,1234,16,20,11080.9130859375,8771.048545837402,2.
 switch-128,112,8,true,false,2,0,1234,16,20,16723.974609375,12215.775966644287,2.45703125
 switch-128,112,16,true,false,2,0,1234,16,20,24712.994140625,18128.00908088684,2.69921875
 switch-128,112,32,true,false,2,0,1234,16,20,29331.201171875,22573.903799057007,3.00390625
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,11936.1650390625,9618.685007095337,1.107421875
+switch-32,24,16,true,false,1,0,1234,16,20,15163.427734375,12982.360363006592,1.7734375
+switch-64,60,8,true,false,1,0,1234,16,20,13377.869140625,11360.700607299805,1.107421875
+switch-64,56,16,true,false,1,0,1234,16,20,18961.505859375,16385.70237159729,1.794921875
+switch-128,112,32,true,false,1,0,1234,16,20,28090.40625,21692.12055206299,3.00390625
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,13914.1962890625,11124.499320983887,1.107421875
+switch-32,24,16,true,false,1,0,1234,16,20,13732.708984375,11979.95376586914,1.7734375
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,60,8,true,false,1,0,1234,16,20,13955.451171875,11756.325006484985,1.107421875
+switch-64,56,16,true,false,1,0,1234,16,20,16578.3125,14491.361141204834,1.794921875
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,112,32,true,false,1,0,1234,16,20,31924.06640625,24279.049158096313,3.00390625
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,32,true,false,1,0,1234,16,20,21264.255859375,18316.10608100891,2.931640625
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,48,32,true,false,1,0,1234,16,20,24796.396484375,21853.694200515747,2.94921875
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,124,8,true,false,1,0,1234,16,20,16116.67578125,11730.81350326538,1.12890625
+switch-128,120,16,true,false,1,0,1234,16,20,22603.212890625,16205.800771713257,1.8203125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,24,16,true,false,1,0,1234,16,20,18185.017578125,15303.726196289062,1.7734375
+
+
+##### A40 xsum #####
+
+
+##### A40 wmt16 #####
+
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,11972.0751953125,10257.14135169983,0.94140625
+switch-32,24,16,true,false,1,0,1234,16,20,14114.1279296875,12146.487951278687,1.41796875
+switch-32,16,32,true,false,1,0,1234,16,20,18757.275390625,15627.309560775757,2.375
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,60,8,true,false,1,0,1234,16,20,13244.5634765625,11777.143478393555,0.943359375
+switch-64,56,16,true,false,1,0,1234,16,20,16018.7578125,14452.927827835083,1.421875
+switch-64,48,32,true,false,1,0,1234,16,20,20168.25390625,18065.123319625854,2.376953125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,124,8,true,false,1,0,1234,16,20,12173.7177734375,10681.334733963013,0.947265625
+switch-128,120,16,true,false,1,0,1234,16,20,14976.4677734375,12861.607313156128,1.42578125
+switch-128,112,32,true,false,1,0,1234,16,20,22229.466796875,18490.0963306427,2.396484375

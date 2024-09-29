@@ -73,11 +73,11 @@ log_experiment() {
 # Execute commands based on the input argument
 case $switch in
     switch-32)
-        for offload_size in 30 28 24 16
+        for offload_size in 28 24 16
         do
             cache_size=$((32 - offload_size))
             max_batch_size=$((cache_size * 2))
-            batch_size=2
+            batch_size=$max_batch_size
             while [ $batch_size -le $max_batch_size ]
             do
                 schedule_size=$((2 * batch_size))
@@ -114,11 +114,11 @@ case $switch in
         done   
         ;;
     switch-64)
-        for offload_size in 62 60 56 48
+        for offload_size in 60 56 48
         do
             cache_size=$((64 - offload_size))
             max_batch_size=$((cache_size * 2))
-            batch_size=2
+            batch_size=$max_batch_size
             while [ $batch_size -le $max_batch_size ]
             do
                 schedule_size=$((2 * batch_size))
@@ -155,11 +155,11 @@ case $switch in
         done
         ;;
     switch-128)
-        for offload_size in 126 124 120 112
+        for offload_size in 124 120 112
         do
             cache_size=$((128 - offload_size))
             max_batch_size=$((cache_size * 2))
-            batch_size=2
+            batch_size=$max_batch_size
             while [ $batch_size -le $max_batch_size ]
             do
                 schedule_size=$((2 * batch_size))

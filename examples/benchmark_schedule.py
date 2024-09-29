@@ -49,7 +49,8 @@ def benchmark_schedule(state_path,
     NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
 
     # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
-    data_name = 'xsum'
+    data_name = 'wmt16'
+    # data_name = 'xsum'
     dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
     dataset.shuffle(seed=1234)
     assert num_batches < len(dataset) // schedule_size
