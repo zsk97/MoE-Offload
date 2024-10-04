@@ -48,6 +48,8 @@ def benchmark_offload(state_path,
         hf_dataset_name = f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32"
         predictor_model_name = f'marsggbo/t5-small_dff2048_dmodel32_token-pattern-predictor_switch{num_experts_per_layer}_{data_name}'
 
+        tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
+        tokenizer.padding_side = 'left'
     else:
         model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
         num_experts_per_layer = 8
@@ -55,6 +57,9 @@ def benchmark_offload(state_path,
         NUM_LABELS = num_experts_per_layer * num_layers
         hf_dataset_name = f"marsggbo/{data_name}_mixtral_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32"
         predictor_model_name = f'marsggbo/t5-small_dff2048_dmodel32_token-pattern-predictor_mixtral_{data_name}'
+        tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
+        tokenizer.padding_side = 'left'
+
     offload_model, cache_engine = build_offload_model(
         offload_per_layer=offload_size,
         state_path=state_path,
@@ -69,8 +74,6 @@ def benchmark_offload(state_path,
     hf_dataset_name = f"marsggbo/xsum_switch32_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32" # for quick test
     dataset = load_dataset(hf_dataset_name)['train']
     dataset.shuffle(seed=1234)
-    tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
-    tokenizer.padding_side = 'left'
     compute_stream = torch.cuda.Stream()
     predict_stream = torch.cuda.Stream()
 
