@@ -19,40 +19,6 @@ import typing as tp
 import torch
 import logging
 
-MODEL_STATE_DICT = None
-
-pretrained_switch_weights_map = {
-    'google/switch-base-8': {
-        'file_type': 'bin',
-        'index_file': None
-    },
-    'google/switch-base-16': {
-        'file_type': 'bin',
-        'index_file': None
-    },
-    'google/switch-base-32': {
-        'file_type': 'bin',
-        'index_file': 'pytorch_model.bin.index.json'
-    },
-    'google/switch-base-64': {
-        'file_type': 'bin',
-        'index_file': 'pytorch_model.bin.index.json'
-    },
-    'google/switch-base-128': {
-        'file_type': 'bin',
-        'index_file': 'pytorch_model.bin.index.json'
-    },
-    'google/switch-base-256': {
-        'file_type': 'bin',
-        'index_file': 'pytorch_model.bin.index.json'
-    },
-    'google/switch-large-128': {
-        'file_type': 'safetensors',
-        'index_file': 'model.safetensors.index.json'
-    },
-}
-
-global_state_cache = {}
 
 @dataclass(frozen=True)
 class OffloadConfig:
@@ -100,14 +66,14 @@ def make_and_load_expert_wrapper(
     return MixtralExpertWrapper(expert, device)
 
 def build_offload_mixtral(
-    offload_per_layer: int=4,
-    state_path: str='/home/nus-hx/.cache/huggingface/hub/models--mistralai--Mixtral-8x7B-Instruct-v0.1/snapshots/*',
-    model_name="mistralai/Mixtral-8x7B-Instruct-v0.1",
-    buffer_size:int = 4,
-    device = torch.device("cuda:0"),
-    config=None,
-    is_baseline=False,
-    is_profile=False,
+        offload_per_layer: int=4,
+        state_path: str='/home/nus-hx/.cache/huggingface/hub/models--mistralai--Mixtral-8x7B-Instruct-v0.1/snapshots/*',
+        model_name="mistralai/Mixtral-8x7B-Instruct-v0.1",
+        buffer_size:int = 4,
+        device = torch.device("cuda:0"),
+        config=None,
+        is_baseline=False,
+        is_profile=False,
     ):
  
     if config is None:
@@ -118,6 +84,7 @@ def build_offload_mixtral(
         )
         config.offload = True
 
+    # config.num_hidden_layers = 2
     num_layers = config.num_hidden_layers
     num_experts = config.num_local_experts
     num_expert_layers = config.num_hidden_layers
@@ -154,6 +121,16 @@ def build_offload_mixtral(
         num_layer=num_layers
     )
 
+    state_index_path = os.path.join(state_path, "model.safetensors.index.json")
+    with open(state_index_path) as f:
+        weight_map = json.load(f)["weight_map"]
+    trunk_state_dict = {}
+    state_file_paths = set(weight_map.values())
+    for state_file_path in state_file_paths:
+        state_dict = load_file(os.path.join(state_path, state_file_path))
+        trunk_state_dict.update({k:v for k,v in state_dict.items() if 'expert' not in k})
+    model.load_state_dict(trunk_state_dict, strict=False)
+
     for layer_idx in trange(model_config.num_hidden_layers, desc="Loading experts"):
         curr_layer = model.model.layers[layer_idx]
         curr_layer.block_sparse_moe = MixtralMoeWrapper(
@@ -183,23 +160,6 @@ def build_offload_mixtral(
             del expert_wrapper
             torch.cuda.synchronize(device)
             torch.cuda.empty_cache()
-
-    if MODEL_STATE_DICT is not None:
-        assert len(global_state_cache) == 0
-        non_expert_dict = {}
-        for key, val in MODEL_STATE_DICT.items():
-            if 'expert' not in key:
-                non_expert_dict[key] = val
-        model.load_state_dict(non_expert_dict, True)
-
-    if len(global_state_cache) != 0:
-        assert MODEL_STATE_DICT is None
-        non_expert_dict = {}
-        for _, state_dict in global_state_cache.items():
-            for key, value in state_dict.items():
-                if 'expert' not in key:
-                    non_expert_dict[key] = value
-        model.load_state_dict(non_expert_dict, True)
 
     if is_profile:
         logging.info("Add model hooking for profiling")
@@ -235,7 +195,7 @@ def custom_generate(
     model.eval()  # Put model in evaluation mode
     with torch.no_grad():  # Disable gradient calculation
         # Initialize variables to store outputs and past_key_values
-        generated_token_ids = input_ids
+        generated_token_ids = []
         crt_tokens = input_ids
         router_logits = []
 
@@ -264,19 +224,32 @@ def custom_generate(
             # Sample from the filtered distribution
             next_token_id = torch.multinomial(probabilities, num_samples=1)
             crt_tokens = next_token_id
-            generated_token_ids = torch.cat((generated_token_ids, next_token_id), dim=1)
+            generated_token_ids.append(next_token_id)
 
             # Update the attention_mask for new token
             attention_mask = torch.cat([attention_mask, torch.ones((input_ids.size(0), 1), device=attention_mask.device)], dim=-1)
-            router_logits.append(outputs.router_logits)
+            router_logits.append(outputs.router_logits) # outputs.router_logits 的长度是 num_layers, 每个元素是 tuple,维度是(num_tokens, num_experts)
 
-        merged_router_logits = []
+        prompt_token_ids = input_ids
+        generated_token_ids = torch.cat(generated_token_ids[:-1], dim=1)
+        
         num_layers = len(router_logits[0])
-        for i in range(num_layers):
-            layer_logits = [logit[i] for logit in router_logits]
-            merged_logits = torch.cat(layer_logits, dim=0)
-            merged_router_logits.append(merged_logits)
-        return generated_token_ids, merged_router_logits
+        bs, input_len = input_ids.shape
+        prompt_router_logits = router_logits[0] # (num_layers, num_tokens, num_experts)
+        prompt_pattern = torch.stack(prompt_router_logits, dim=0) # (num_layers, num_tokens, num_experts), num_tokens=bs*input_len
+        prompt_pattern = prompt_pattern.view(num_layers, bs, input_len, -1)
+        prompt_pattern = torch.permute(prompt_pattern, (1, 0, 2, 3)) # (bs, num_layers, input_len, num_experts)，后面需要通过top-1转换成(bs, num_layers, input_len)
+        
+        decode_router_logits = router_logits[1:] # (num_steps, num_layers, num_tokens, num_experts), num_tokens=bs*1
+        decode_pattern = []
+        for step_idx in range(len(decode_router_logits)):
+            step_logits = decode_router_logits[step_idx] # tuple： num_layers个维度(bs, num_experts)的元素
+            step_decode_pattern = torch.stack(step_logits, dim=0) # 转换成 tensor，维度是(num_layers, bs, num_experts)
+            step_decode_pattern = step_decode_pattern.permute(1, 0, 2) # (bs, num_layers, num_experts)
+            decode_pattern.append(step_decode_pattern) # (bs, num_layers, num_experts)
+        decode_pattern = torch.stack(decode_pattern, dim=0) # (num_steps, bs, num_layers, num_experts)
+        decode_pattern = decode_pattern.permute(1, 2, 0, 3) # (bs, num_layers, num_steps, num_experts)
+        return prompt_token_ids, generated_token_ids, prompt_pattern.topk(2)[1], decode_pattern.topk(2)[1]
 
 
 def top_p_filtering(logits, top_p=0.9):
@@ -313,11 +286,15 @@ if __name__ == "__main__":
     state_path = glob(f"{os.path.expanduser('~')}/.cache/huggingface/hub/models--mistralai--Mixtral-8x7B-Instruct-v0.1/snapshots/*")[0]
     print(state_path)
     model, expert_cache = build_offload_mixtral(
-        offload_per_layer=4,
+        offload_per_layer=7,
         buffer_size=4,
         state_path=state_path,
         model_name="mistralai/Mixtral-8x7B-Instruct-v0.1",
     )
+    model = model.bfloat16().cuda()
+    num_layers = 32
+    pattern = torch.zeros((num_layers, 8), dtype=torch.int).cuda()
+    expert_cache.prefetch(pattern)
     # model = AutoModelForCausalLM.from_pretrained(
     #     "mistralai/Mixtral-8x7B-Instruct-v0.1", torch_dtype=torch.bfloat16, device_map=torch.device("cuda:0"))
     model.eval()
@@ -326,59 +303,56 @@ if __name__ == "__main__":
     # 构建routing path dataset
     #########################################################
     import datasets
-    from transformers import AutoModelForSeq2SeqLM, AutoConfig, AutoTokenizer
+    from transformers import AutoConfig, AutoTokenizer
 
-    # data_name = 'xsum'
-    data_name = 'wmt16'
-    dataset_name = f"marsggbo/{data_name}_switch32_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32"
-    ds = datasets.load_dataset(dataset_name)
-    all_prompt_text = ds['train']['prompt_text']
-    bs = 16
-    batch_text = [all_prompt_text[i:i+bs] for i in range(0, len(all_prompt_text), bs)]
+    for data_name in ['xsum', 'wmt16']:
+        if data_name == 'xsum':
+            prefix = "summarize: "
+        elif data_name == 'wmt16':
+            prefix = "translate French to English: "
+        dataset_name = f"marsggbo/{data_name}_switch32_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32"
+        ds = datasets.load_dataset(dataset_name)
+        all_prompt_text = ds['train']['prompt_text']
+        bs = 16
+        batch_text = [prefix + all_prompt_text[i] for i in range(0, len(all_prompt_text), bs)]
 
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
-    tokenizer.padding_side = 'left'
-    
-    dataset_for_predictor = {
-        "prompt_text": [],
-        "prompt_ids": [],
-        "decode_ids": [],
-        "prompt_pattern": [],
-        "decode_pattern": []
-    }
-    def parse_router_logits(router_logits_tuples):
-        encoder_router, decoder_router = router_logits_tuples
-        num_layers = len(encoder_router)
-        encoder_pattern = torch.stack([encoder_router[i][1] for i in range(num_layers) if i%2==1], dim=-2) # bs,seq_len, num_layer, num_experts
-        decoder_pattern = torch.stack([decoder_router[i][1] for i in range(num_layers) if i%2==1], dim=-2) # bs,seq_len, num_layer, num_experts
-        return encoder_pattern.cpu(), decoder_pattern.cpu()
+        tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
+        tokenizer.padding_side = 'left'
+        tokenizer.pad_token = tokenizer.eos_token
+        
+        dataset_for_predictor = {
+            "prompt_text": [],
+            "prompt_ids": [],
+            "decode_ids": [],
+            "prompt_pattern": [],
+            "decode_pattern": []
+        }
 
-
-    max_tokens = 32
-    rank = 0
-    device = torch.device(f"cuda:{rank}")
-    for batch_idx, batch_data in enumerate(batch_text):
-        if batch_idx == 2:
-            break
-        data = tokenizer(batch_data, return_tensors="pt", padding=True, return_attention_mask=True)
-        input_ids = data.input_ids.to(rank)
-        attention_mask = data.attention_mask.to(rank)
-        decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
-        generated_ids, router_logits_tuples = custom_generate(
-            input_ids, attention_mask, model, max_new_tokens=max_tokens
-        )
-        encoder_pattern, decoder_pattern = parse_router_logits(router_logits_tuples)
-        attention_mask = attention_mask.cpu()
-        for i in range(len(generated_ids)):
-            dataset_for_predictor['prompt_text'].append(batch_data[i])
-            unpadded_input_ids = input_ids[i][attention_mask[i].bool()]
-            dataset_for_predictor['prompt_ids'].append(unpadded_input_ids.cpu())
-            dataset_for_predictor['decode_ids'].append(generated_ids[i].cpu())
-            pattern_shape = encoder_pattern[0].shape
-            prompt_pattern = encoder_pattern[i][attention_mask[i].repeat(pattern_shape[0],1).bool()].view(pattern_shape[0],-1)
-            dataset_for_predictor['prompt_pattern'].append(prompt_pattern)
-            dataset_for_predictor['decode_pattern'].append(decoder_pattern[i])
-            print(f"{i} Q: {tokenizer.decode(input_ids[i].cpu().numpy().tolist(), skip_special_tokens=True)}")
-            print(f"{i} A: {tokenizer.decode(generated_ids[i].cpu().numpy().tolist(), skip_special_tokens=True)}")
-    # dataset_for_predictor = datasets.Dataset.from_dict(dataset_for_predictor)
-    # dataset_for_predictor.push_to_hub(f'marsggbo/{data_name}_mixtral8x7bInstructv0.1_token_patterns')
+        max_tokens = 16
+        rank = 0
+        device = torch.device(f"cuda:{rank}")
+        for batch_idx, batch_data in enumerate(batch_text):
+            batch_data = [prefix+x for x in batch_data]
+            # if batch_idx == 2:
+            #     break
+            data = tokenizer(batch_data, return_tensors="pt", padding=True, return_attention_mask=True)
+            input_ids = data.input_ids.to(rank)
+            attention_mask = data.attention_mask.to(rank)
+            decoder_input_ids = torch.tensor([[0]]*len(input_ids)).int().to(device)
+            prompt_token_ids, generated_ids, prompt_patterns, decode_patterns = custom_generate(
+                input_ids, attention_mask, model, max_new_tokens=max_tokens
+            )
+            attention_mask = attention_mask.cpu().bool() # (bs, input_len)
+            for i in range(len(generated_ids)):
+                dataset_for_predictor['prompt_text'].append(batch_data[i])
+                unpadded_input_ids = input_ids[i][attention_mask[i]]
+                dataset_for_predictor['prompt_ids'].append(unpadded_input_ids.cpu())
+                dataset_for_predictor['decode_ids'].append(generated_ids[i].cpu())
+                pattern_shape = prompt_patterns[0].shape # (num_layers, input_len, top2)
+                prompt_pattern = prompt_patterns[i][:,attention_mask[i]]
+                dataset_for_predictor['prompt_pattern'].append(prompt_pattern)
+                dataset_for_predictor['decode_pattern'].append(decode_patterns[i])
+                print(f"{i} Q: {tokenizer.decode(input_ids[i].cpu().numpy().tolist(), skip_special_tokens=True)}")
+                print(f"{i} A: {tokenizer.decode(generated_ids[i].cpu().numpy().tolist(), skip_special_tokens=True)}")
+        dataset_for_predictor = datasets.Dataset.from_dict(dataset_for_predictor)
+        dataset_for_predictor.push_to_hub(f'marsggbo/{data_name}_mixtral8x7bInstructv0.1_token_patterns')

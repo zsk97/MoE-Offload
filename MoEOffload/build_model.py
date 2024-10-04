@@ -289,3 +289,32 @@ def build_offload_model(
             offload_per_layer=offload_per_layer, buffer_size=buffer_size, state_path=state_path, model_name=model_name, device=device, config=config, is_baseline=is_baseline, is_profile=is_profile)
     else:
         raise ValueError(f"Unknown model type: {state_path}")
+
+
+if __name__ == "__main__":
+    import os
+    from glob import glob
+    from MoEOffload.utils import init_env
+    init_env()
+    num_experts = 32
+    # state_path = glob(f"{os.path.expanduser('~')}/.cache/huggingface/hub/models--google--switch-base-{num_experts}/snapshots/*")[0]
+    state_path = "/home/xinmatrix/hexin/datasets/switch-base-32"
+    print(state_path)
+    model, expert_cache = build_offload_switch(
+        offload_per_layer=4,
+        buffer_size=4,
+        state_path=state_path,
+        model_name=f"google/switch-base-{num_experts}",
+    )
+    expert_cache.prefetch(torch.zeros((6, num_experts), dtype=torch.int).cuda())
+    encoder_input_ids = torch.randint(0,100,(2,10)).cuda()
+    decoder_input_ids = torch.randint(0,100,(2,10)).cuda()
+    model.eval()
+    with torch.no_grad():
+        output = model(
+            input_ids=encoder_input_ids,
+            decoder_input_ids=decoder_input_ids,
+            attention_mask=None,
+            decoder_attention_mask=None,
+        )
+        print(output)
