@@ -358,7 +358,7 @@ class ExpertCacheV1(object):
                            eviction_group: int = 0, offload: Optional[bool] = None):
         assert uid not in self.registered_experts, f"expert {uid} already registered"
         assert isinstance(storage, torch.UntypedStorage)
-        assert len(storage) == self.module_size
+        assert len(storage) == self.module_size, f"Storage size {len(storage)} != module size{self.module_size}"
 
         if offload is None or not offload:  # False or None
             for i in range(len(self.main_modules)):

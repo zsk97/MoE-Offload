@@ -45,9 +45,7 @@ class MixtralExpertWrapper(nn.Module):
         '''
         state_dict = {
             f"w{i}": {
-                "W_q": getattr(layer, f"w{i}").W_q,
-                "meta": getattr(layer, f"w{i}").meta,
-                "bias": getattr(layer, f"w{i}").bias,
+                "weight": getattr(layer, f"w{i}").weight,
             }
             for i in range(1, 4)
         }
@@ -82,9 +80,7 @@ class MixtralExpertWrapper(nn.Module):
 
         for layer_id, states in state_dict.items():
             patched = getattr(layer, layer_id)
-            patched.W_q = states["W_q"]
-            patched.meta = states["meta"]
-            patched.bias = states["bias"]
+            patched.weight = nn.Parameter(states['weight'])
             setattr(layer, layer_id, patched)
 
         return layer, storage

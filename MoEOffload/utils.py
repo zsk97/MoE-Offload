@@ -3,6 +3,7 @@ import socket
 from types import SimpleNamespace
 from contextlib import contextmanager
 import torch
+import fairscale.nn.model_parallel.initialize as fs_init
 """ utility functions that help you process nested dicts, tuples, lists and namedtuples """
 
 from MoEOffload.custom_layers import SwitchMoeWrapperV1
@@ -49,6 +50,11 @@ def init_distributed_mode(args=SimpleNamespace()):
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                          world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()
+
+def init_env():
+    # define the model
+    init_distributed_mode()
+    fs_init.initialize_model_parallel(torch.distributed.get_world_size())
 
 def nested_compare(t, u):
     """

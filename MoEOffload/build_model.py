@@ -8,6 +8,7 @@ from transformers.models.switch_transformers.configuration_switch_transformers i
 from MoEOffload.models.switch_transformer import (
     SwitchTransformersDenseActDense,
     SwitchTransformersForConditionalGeneration)
+from MoEOffload.build_mixtral_model import build_offload_mixtral
 
 from dataclasses import dataclass
 from transformers import AutoConfig
@@ -149,9 +150,9 @@ def make_and_load_expert_wrapper(
 
 def build_offload_switch(
     offload_per_layer: int=16,
-    buffer_size:int = 6,
     state_path: str='/home/nus-hx/.cache/huggingface/hub/models--google--switch-base-16/snapshots/0ef7d88ed50ec5f2cfdc019e81cef04d19700f8f',
     model_name="google/switch-base-64",
+    buffer_size:int = 4,
     device = torch.device("cuda:0"),
     config=None,
     is_baseline=False,
@@ -269,3 +270,22 @@ def build_offload_switch(
             module.register_forward_pre_hook(forward_pre_hook)
             module.register_forward_hook(forward_post_hook)
     return model, expert_cache
+
+def build_offload_model(
+        offload_per_layer: int,
+        state_path: str,
+        model_name: str,
+        buffer_size: int=4,
+        device: torch.device=torch.device("cuda:0"),
+        config: AutoConfig=None,
+        is_baseline: bool=False,
+        is_profile: bool=False,
+    ):
+    if 'switch' in state_path.lower():
+        return build_offload_switch(
+            offload_per_layer=offload_per_layer, buffer_size=buffer_size, state_path=state_path, model_name=model_name, device=device, config=config, is_baseline=is_baseline, is_profile=is_profile)
+    elif 'mixtral' in state_path.lower():
+        return build_offload_mixtral(
+            offload_per_layer=offload_per_layer, buffer_size=buffer_size, state_path=state_path, model_name=model_name, device=device, config=config, is_baseline=is_baseline, is_profile=is_profile)
+    else:
+        raise ValueError(f"Unknown model type: {state_path}")
