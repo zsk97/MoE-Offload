@@ -684,3 +684,70 @@ Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max 
 switch-128,124,8,true,false,1,0,1234,16,20,12173.7177734375,10681.334733963013,0.947265625
 switch-128,120,16,true,false,1,0,1234,16,20,14976.4677734375,12861.607313156128,1.42578125
 switch-128,112,32,true,false,1,0,1234,16,20,22229.466796875,18490.0963306427,2.396484375
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,13763.69140625,11598.69933128357,0.94921875
+switch-32,24,16,true,false,1,0,1234,16,20,13913.4716796875,11987.91241645813,1.427734375
+switch-32,16,32,true,false,1,0,1234,16,20,19510.791015625,16356.388807296753,2.373046875
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,60,8,true,false,1,0,1234,16,20,11948.2666015625,10539.383172988892,0.94921875
+switch-64,56,16,true,false,1,0,1234,16,20,17372.107421875,15457.165002822876,1.431640625
+switch-64,48,32,true,false,1,0,1234,16,20,23396.70703125,20963.57798576355,2.376953125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,124,8,true,false,1,0,1234,16,20,12069.4560546875,10296.119689941406,0.955078125
+switch-128,120,16,true,false,1,0,1234,16,20,17232.1171875,14217.311382293701,1.43359375
+switch-128,112,32,true,false,1,0,1234,16,20,22729.091796875,18623.735666275024,2.3984375
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,14796.6484375,12020.668268203735,1.11328125
+switch-32,24,16,true,false,1,0,1234,16,20,19882.96875,17019.60587501526,1.75390625
+switch-32,16,32,true,false,1,0,1234,16,20,25321.228515625,21734.45463180542,4.193359375
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,60,8,true,false,1,0,1234,16,20,13850.4638671875,11518.261671066284,1.115234375
+switch-64,56,16,true,false,1,0,1234,16,20,20185.0546875,17256.30784034729,1.775390625
+switch-64,48,32,true,false,1,0,1234,16,20,24962.94140625,21900.40159225464,4.20703125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,124,8,true,false,1,0,1234,16,20,16750.849609375,11355.082511901855,1.13671875
+switch-128,120,16,true,false,1,0,1234,16,20,26243.939453125,18604.498147964478,1.8046875
+switch-128,112,32,true,false,1,0,1234,16,20,34228.4609375,26637.760162353516,4.2890625
+
+
+##### A40 xsum #####
+
+
+##### A40 wmt16 #####
+
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,28,8,true,false,1,0,1234,16,20,14029.908203125,11775.866508483887,0.94921875
+switch-32,24,16,true,false,1,0,1234,16,20,12754.0625,11067.926168441772,1.427734375
+switch-32,16,32,true,false,1,0,1234,16,20,20719.263671875,17135.45274734497,2.373046875
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-64,60,8,true,false,1,0,1234,16,20,13526.9716796875,11863.682985305786,0.94921875
+switch-64,56,16,true,false,1,0,1234,16,20,16286.3427734375,14511.709213256836,1.431640625
+switch-64,48,32,true,false,1,0,1234,16,20,22872.09375,20463.032484054565,2.376953125
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-128,124,8,true,false,1,0,1234,16,20,14437.3974609375,12197.343826293945,0.955078125
+switch-128,120,16,true,false,1,0,1234,16,20,18956.439453125,15538.697957992554,1.43359375
+switch-128,112,32,true,false,1,0,1234,16,20,27214.34375,22086.467266082764,2.3984375
+switch-32,16,32,true,false,1,0,1234,16,20,19283.4375,16082.295894622803,2.373046875
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,32,true,false,1,0,1234,16,20,18260.71875,15364.36414718628,2.373046875,0.8325705640939759
+switch-32,16,32,true,false,1,0,1234,16,20,19444.689453125,16330.384254455566,2.373046875,0.8325705640939759
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,32,true,false,1,0,1234,16,20,18950.525390625,15978.261232376099,2.373046875,0.8325705640939759
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)
+switch-32,16,32,true,false,1,0,1234,16,20,19234.61328125,16085.614919662476,2.373046875,0.8325705640939759
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB), Hit Rate
+switch-32,16,32,true,false,1,0,1234,16,20,20542.6953125,17182.56115913391,2.373046875,0.8325705640939759
+
+
+##### A40 wmt16 #####
+
+
+
+
+##### A40 xsum #####
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB), Hit Rate
+switch-32,16,32,true,false,1,0,1234,16,20,19963.625,16815.706491470337,2.373046875,0.8325705640939759
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB), Hit Rate
+switch-32,16,32,true,false,1,0,1234,16,20,20004.146484375,16873.461723327637,2.373046875,0.8325705640939759
+Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB), Hit Rate
+switch-32,16,32,true,false,1,0,1234,16,20,20184.240234375,16951.641082763672,2.373046875,0.8325705640939759

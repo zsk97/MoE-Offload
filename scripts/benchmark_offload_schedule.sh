@@ -18,6 +18,7 @@ fi
 switch=$1
 
 # Default values for parameters
+data_name="wmt16"
 is_predict=true
 in_order=false
 seed=1234
@@ -31,7 +32,7 @@ csv_file="offload_schedule_experiment_data.csv"
 raw_log_file="offload_schedule_raw_experiment_log.txt"
 
 # Initialize CSV file with headers
-echo "Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB)" >> $csv_file
+echo "Switch,Offload Size,Batch Size,Is Predict,In Order,Top N,Schedule Size,Seed,Max New Tokens,Num Batches,Elapsed Time,Forward Computation Time,GPU Mem(GB), Hit Rate" >> $csv_file
 
 # Function to log and append to CSV
 log_experiment() {
@@ -48,6 +49,7 @@ log_experiment() {
     local elapsed_time=${11}
     local forward_time=${12}
     local max_gpu_mem=${13}
+    local final_hit_rate=${14}
 
     # Log to text file
     echo "----------------------------------------" >> $log_file
@@ -64,10 +66,11 @@ log_experiment() {
     echo "Elapsed Time: $elapsed_time" >> $log_file
     echo "Forward Computation Time: $forward_time" >> $log_file
     echo "Max GPU memory usage: $max_gpu_mem" >> $log_file
+    echo "Final hit rate: $final_hit_rate" >> $log_file
     echo "----------------------------------------" >> $log_file
 
     # Append to CSV file
-    echo "$switch,$offload_size,$batch_size,$is_predict,$in_order,$top_n,$schedule_size,$seed,$max_new_tokens,$num_batches,$elapsed_time,$forward_time,$max_gpu_mem" >> $csv_file
+    echo "$switch,$offload_size,$batch_size,$is_predict,$in_order,$top_n,$schedule_size,$seed,$max_new_tokens,$num_batches,$elapsed_time,$forward_time,$max_gpu_mem,$final_hit_rate" >> $csv_file
 }
 
 # Execute commands based on the input argument
@@ -102,13 +105,15 @@ case $switch in
                                                 --schedule_size=$schedule_size \
                                                 --seed=$seed \
                                                 --max_new_tokens=$max_new_tokens \
+                                                --data_name=$data_name \
                                                 --num_batches=$num_batches 2>&1 | tee -a $raw_log_file"
                 echo $cmd
                 output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
-                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                final_hit_rate=$(echo "$output" | grep "Final hit rate" | awk '{print $4}')
+                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem" "$final_hit_rate"
                 batch_size=$((batch_size * 2))
             done
         done   
@@ -143,13 +148,15 @@ case $switch in
                                                 --schedule_size=$schedule_size \
                                                 --seed=$seed \
                                                 --max_new_tokens=$max_new_tokens \
+                                                --data_name=$data_name \
                                                 --num_batches=$num_batches 2>&1 | tee -a $raw_log_file"
                 echo $cmd
                 output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
-                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                final_hit_rate=$(echo "$output" | grep "Final hit rate" | awk '{print $4}')
+                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem" "$final_hit_rate"
                 batch_size=$((batch_size * 2))
             done
         done
@@ -184,13 +191,15 @@ case $switch in
                                                 --schedule_size=$schedule_size \
                                                 --seed=$seed \
                                                 --max_new_tokens=$max_new_tokens \
+                                                --data_name=$data_name \
                                                 --num_batches=$num_batches 2>&1 | tee -a $raw_log_file"
                 echo $cmd
                 output=$(eval $cmd)
                 elapsed_time=$(echo "$output" | grep "Elapsed time" | awk '{print $3}')
                 forward_time=$(echo "$output" | grep "Forward computation time" | awk '{print $4}')
                 max_gpu_mem=$(echo "$output" | grep "Max GPU memory usage" | awk '{print $5}')
-                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem"
+                final_hit_rate=$(echo "$output" | grep "Final hit rate" | awk '{print $4}')
+                log_experiment "$switch" "$offload_size" "$batch_size" "$is_predict" "$in_order" "$top_n" "$schedule_size" "$seed" "$max_new_tokens" "$num_batches" "$elapsed_time" "$forward_time" "$max_gpu_mem" "$final_hit_rate"
                 batch_size=$((batch_size * 2))
             done
         done

@@ -48,9 +48,8 @@ def benchmark_offload(state_path,
     NUM_LABELS = num_decoder_sparse_layer * num_experts_per_layer
 
     # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
-    data_name = 'wmt16'
-    # data_name = 'xsum'
-    dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
+    data_name = args.data_name # 'wmt16' by default or 'xsum'
+    dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
@@ -86,6 +85,7 @@ def benchmark_offload(state_path,
     if is_profile:
         torch.cuda.cudart().cudaProfilerStart()
     batch = 0
+    hit_rate = []
     forward_time = 0
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -103,7 +103,9 @@ def benchmark_offload(state_path,
 
         batch += 1
         torch.cuda.nvtx.range_pop()
-
+        crt_hit_rate = cache_engine.get_hit_rate()
+        print('Hit rate:', crt_hit_rate)
+        hit_rate.append(crt_hit_rate)
         if is_profile and batch == 8:
             break
         
@@ -114,6 +116,8 @@ def benchmark_offload(state_path,
         torch.cuda.cudart().cudaProfilerStop()
     end_event.record()
     torch.cuda.synchronize()
+    final_hit_rate = sum(hit_rate) / len(hit_rate)
+    print(f"Final hit rate: {final_hit_rate}")
     memory_allocated = torch.cuda.max_memory_reserved(0) / 1024 ** 3
     print(f"Memory for generation: {memory_function() - prev_memory} GB")
     prev_memory = memory_function()

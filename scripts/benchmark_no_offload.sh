@@ -12,6 +12,7 @@ fi
 switch=$1
 
 # Default values for parameters
+data_name="wmt16"
 is_profile=false
 seed=1234
 max_new_tokens=16
@@ -60,6 +61,7 @@ case $switch in
                                             --batch_size=$batch_size \
                                             --max_new_tokens=$max_new_tokens \
                                             --num_batches=$num_batches \
+                                            --data_name=$data_name \
                                             2>&1 | tee -a $raw_log_file"
             echo $cmd
             output=$(eval $cmd)
@@ -76,6 +78,7 @@ case $switch in
                                             --batch_size=$batch_size \
                                             --max_new_tokens=$max_new_tokens \
                                             --num_batches=$num_batches \
+                                            --data_name=$data_name \
                                             2>&1 | tee -a $raw_log_file"
             echo $cmd
             output=$(eval $cmd)
@@ -92,6 +95,7 @@ case $switch in
                                             --batch_size=$batch_size \
                                             --max_new_tokens=$max_new_tokens \
                                             --num_batches=$num_batches \
+                                            --data_name=$data_name \
                                             2>&1 | tee -a $raw_log_file"
             echo $cmd
             output=$(eval $cmd)

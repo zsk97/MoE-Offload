@@ -92,6 +92,11 @@ class ExpertCache:
             torch.UntypedStorage(self.module_size).pin_memory(self.device) for _ in range(buffer_size)])
         self.group_infos: Dict[int, EvictionGroupInfo] = defaultdict(EvictionGroupInfo)
 
+        # 添加命中率统计变量
+        self.num_hits = 0
+        self.num_misses = 0
+        self.num_accesses = 0
+
     def _check_module(self, module: MixtralExpertWrapper):
         assert isinstance(module.storage, torch.UntypedStorage)
         if self.module_type is None:
@@ -180,11 +185,14 @@ class ExpertCache:
                     self._swap(info_to_load, eviction_group.choose_expert_to_evict()))
 
             for info in infos:
+                self.num_accesses += 1
                 if len(pre_loaded_infos) > 0 and info is pre_loaded_infos[0]:
+                    self.num_hits += 1
                     pre_loaded_infos.popleft()
                     yield (info.uid, pre_loaded_experts.popleft())
                 elif len(infos_in_loading) > 0 and info is infos_in_loading[0]:
                     infos_in_loading.popleft()
+                    self.num_accesses += 1
                     yield (info.uid, experts_in_loading.popleft())
                     if len(infos_to_load) > 0:
                         info_to_load = infos_to_load.popleft()
@@ -272,6 +280,24 @@ class ExpertCache:
             #     failed_uids = [e.uid for e in cpu2gpu_infos]
             #     print(f"Layer{layer_id} has {len(cpu2gpu_infos)} experts {failed_uids} that cannot be preloaded.")
 
+    def get_hit_rate(self) -> float:
+        """计算命中率"""
+        if self.num_accesses == 0:
+            return 0.0
+        return self.num_hits / self.num_accesses
+
+    def get_miss_rate(self) -> float:
+        """计算缺失率"""
+        if self.num_accesses == 0:
+            return 0.0
+        return self.num_misses / self.num_accesses
+
+    def reset_stats(self):
+        """重置统计信息"""
+        self.num_hits = 0
+        self.num_misses = 0 
+        self.num_accesses = 0
+
 class ExpertCacheV1(object):
     def __init__(self, make_module: callable, main_size: int, offload_size: int, buffer_size: int, num_layer: int):
         """Dynamically loads an array of modules with identical hyperparameters"""
@@ -304,6 +330,10 @@ class ExpertCacheV1(object):
         self.num_layer = num_layer
         print("Number layer ", num_layer)
         self.event_queue = [None] * self.num_layer
+        # 添加命中率统计变量
+        self.num_hits = 0
+        self.num_misses = 0
+        self.num_accesses = 0
 
     def _check_module(self, module: MixtralExpertWrapper):
         assert isinstance(module.storage, torch.UntypedStorage)
@@ -422,10 +452,13 @@ class ExpertCacheV1(object):
             # Record the finished computation expert
             finish_experts_info = deque()
             for info in infos:
+                self.num_accesses += 1
                 if len(pre_loaded_infos) > 0 and info is pre_loaded_infos[0]:
+                    self.num_hits += 1
                     pre_loaded_infos.popleft()
                     yield (info.uid, pre_loaded_experts.popleft())
                 elif len(infos_to_load) > 0:
+                    self.num_misses += 1
                     # Syn the copy and return expert
                     event_to_sync[info.uid].synchronize()
                     expert = self.main_modules[info.gpu_index]
@@ -508,3 +541,21 @@ class ExpertCacheV1(object):
                 print(expert.uid)
             print("******************")
             print(torch.nonzero(pattern[i], as_tuple=False))
+
+    def get_hit_rate(self) -> float:
+        """计算命中率"""
+        if self.num_accesses == 0:
+            return 0.0
+        return self.num_hits / self.num_accesses
+
+    def get_miss_rate(self) -> float:
+        """计算缺失率"""
+        if self.num_accesses == 0:
+            return 0.0
+        return self.num_misses / self.num_accesses
+
+    def reset_stats(self):
+        """重置统计信息"""
+        self.num_hits = 0
+        self.num_misses = 0 
+        self.num_accesses = 0

@@ -109,9 +109,8 @@ def benchmark_no_offload(
 
     num_experts_per_layer = int(match.group(1))
     # dataset = load_dataset(f"marsggbo/bigbench4switch{int(match.group(1))}_patternand_pattern_predictor_gen")['train']
-    data_name = 'wmt16'
-    # data_name = 'xsum'
-    dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns")['train']
+    data_name = args.data_name # 'wmt16' by default or 'xsum'
+    dataset = load_dataset(f"marsggbo/{data_name}_switch{num_experts_per_layer}_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32")['train']
     dataset.shuffle(seed=1234)
     tokenizer = AutoTokenizer.from_pretrained("google/switch-base-32")
     tokenizer.padding_side = 'left'
