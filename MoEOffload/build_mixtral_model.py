@@ -286,7 +286,7 @@ if __name__ == "__main__":
     state_path = glob(f"{os.path.expanduser('~')}/.cache/huggingface/hub/models--mistralai--Mixtral-8x7B-Instruct-v0.1/snapshots/*")[0]
     print(state_path)
     model, expert_cache = build_offload_mixtral(
-        offload_per_layer=7,
+        offload_per_layer=3,
         buffer_size=4,
         state_path=state_path,
         model_name="mistralai/Mixtral-8x7B-Instruct-v0.1",
@@ -313,8 +313,8 @@ if __name__ == "__main__":
         dataset_name = f"marsggbo/{data_name}_switch32_token_real_and_predicted_patterns_t5-small_dff2048_dmodel32"
         ds = datasets.load_dataset(dataset_name)
         all_prompt_text = ds['train']['prompt_text']
-        bs = 16
-        batch_text = [prefix + all_prompt_text[i] for i in range(0, len(all_prompt_text), bs)]
+        bs = 32
+        batch_text = [all_prompt_text[i:i+bs] for i in range(0, len(all_prompt_text), bs)]
 
         tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
         tokenizer.padding_side = 'left'
